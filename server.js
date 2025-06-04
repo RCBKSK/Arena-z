@@ -1,21 +1,16 @@
 const express = require('express');
 const path = require('path');
-const cors = require('cors');
-
 const app = express();
-app.use(cors());
-app.use(express.json());
 
-// Serve static files from public directory
+// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// API endpoint if needed
-app.post('/verify-ownership', async (req, res) => {
-  // This is just a placeholder - actual verification happens in the browser
-  res.json({ success: true });
+// Handle all routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server running: https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`);
 });
