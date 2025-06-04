@@ -20,19 +20,40 @@
     </div>
 
     <div class="section">
-      <h3>2. NFT Contract Details</h3>
-      <p>Contract Address: <code>0x241B47bDE91B7d1843cA34Fc694D4e6926f3B83e</code></p>
-      <label for="tokenIds">Token IDs (comma separated):</label>
-      <input type="text" id="tokenIds" placeholder="1,2,3,4,...">
+      <h3>2. Load Your NFTs</h3>
+      <button id="loadNFTs" disabled>Load My NFTs</button>
+      <div id="nftLoader" style="display: none;">Loading NFTs...</div>
+      
+      <div class="nft-controls" style="display: none;">
+        <button id="toggleSelectAll">Select All</button>
+        <button id="sortBtn">Sort by ID</button>
+        <span id="selectedCount">0 selected</span>
+      </div>
+      
+      <div id="nftGrid" class="nft-grid"></div>
     </div>
 
     <div class="section">
-      <h3>3. Recipient Address</h3>
+      <h3>3. Manual Token IDs (Optional)</h3>
+      <label for="tokenIds">Token IDs (comma separated):</label>
+      <input type="text" id="tokenIds" placeholder="1,2,3,4,... or use NFT selection above">
+    </div>
+
+    <div class="section">
+      <h3>4. Recipient Address</h3>
       <input type="text" id="recipient" placeholder="0x...">
     </div>
 
     <div class="section">
-      <button id="transferBtn" disabled>Transfer NFTs</button>
+      <h3>5. Gas Optimization</h3>
+      <button id="optimizeGas" disabled>Optimize Gas</button>
+      <p>Current gas: <span id="currentGas">-</span> Gwei</p>
+      <p>Suggested gas: <span id="suggestedGas">-</span> Gwei</p>
+      <p>Native token: <span id="nativeToken">-</span> | USD Price: $<span id="usdPrice">-</span></p>
+    </div>
+
+    <div class="section">
+      <button id="transferBtn" disabled>Transfer Selected NFTs</button>
       <div id="status"></div>
       <div id="results"></div>
     </div>
