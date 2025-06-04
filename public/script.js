@@ -39,7 +39,7 @@ async function connectWallet() {
     try {
       // Request account access
       accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      
+
       // Check if connected to Arena-Z Chain
       const chainId = await window.ethereum.request({ method: 'eth_chainId' });
       if (parseInt(chainId, 16) !== CHAIN_ID) {
@@ -86,7 +86,8 @@ async function connectWallet() {
 async function transferNFTs() {
   const recipient = document.getElementById('recipient').value.trim();
   const tokenIdsInput = document.getElementById('tokenIds').value.trim();
-  
+  const gasPriceInGwei = document.getElementById('gasPrice').value.trim();
+
   if (!recipient || !tokenIdsInput) {
     updateStatus('Please fill all fields');
     return;
@@ -107,7 +108,7 @@ async function transferNFTs() {
 
   try {
     const results = [];
-    
+
     for (const tokenId of tokenIds) {
       try {
         // Check ownership
@@ -118,18 +119,22 @@ async function transferNFTs() {
         }
 
         // Execute transfer
+        const txParams = { from: accounts[0] };
+        if (gasPriceInGwei) {
+          txParams.gasPrice = web3.utils.toWei(gasPriceInGwei, 'gwei');
+        }
         const tx = await contract.methods.safeTransferFrom(
           accounts[0],
           recipient,
           tokenId
-        ).send({ from: accounts[0] });
+        ).send(txParams);
 
         results.push({ 
           tokenId, 
           status: 'Transferred', 
           txHash: tx.transactionHash 
         });
-        
+
         updateStatus(`Transferred token ${tokenId}...`);
       } catch (err) {
         results.push({ 
@@ -156,7 +161,7 @@ function updateStatus(message) {
 function displayResults(results) {
   const resultsDiv = document.getElementById('results');
   resultsDiv.innerHTML = '<h4>Transfer Results:</h4>';
-  
+
   const table = document.createElement('table');
   table.innerHTML = `
     <tr>
@@ -165,7 +170,7 @@ function displayResults(results) {
       <th>Details</th>
     </tr>
   `;
-  
+
   results.forEach(result => {
     const row = document.createElement('tr');
     row.innerHTML = `
@@ -175,6 +180,6 @@ function displayResults(results) {
     `;
     table.appendChild(row);
   });
-  
+
   resultsDiv.appendChild(table);
 }
