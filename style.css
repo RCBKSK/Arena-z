@@ -94,3 +94,17 @@ a {
 a:hover {
   text-decoration: underline;
 }
+
+/* Add to your existing CSS */
+#optimizeGas {
+  background-color: #27ae60;
+  margin-bottom: 10px;
+}
+
+#optimizeGas:hover {
+  background-color: #2ecc71;
+}
+
+#currentGas, #suggestedGas {
+  font-weight: bold;
+}
