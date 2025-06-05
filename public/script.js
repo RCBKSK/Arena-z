@@ -1,9 +1,11 @@
-
 // Contract details
 const CONTRACT_ADDRESS = '0x241B47bDE91B7d1843cA34Fc694D4e6926f3B83e';
 const CHAIN_ID = 7897;
 const RPC_URL = 'https://rpc.arena-z.gg';
 const EXPLORER_URL = 'https://explorer.arena-z.gg';
+
+// Optional: Address of the batch transfer proxy contract
+const BATCH_PROXY_ADDRESS = ''; // Replace with your deployed proxy address
 
 // Enhanced ERC721 ABI with additional functions
 const ERC721_ABI = [
@@ -98,12 +100,40 @@ const ERC721_ABI = [
   }
 ];
 
+// ABI for the batch transfer proxy contract (replace with actual ABI)
+const BATCH_PROXY_ABI = [
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_nftContract",
+        "type": "address"
+      },
+      {
+        "internalType": "address[]",
+        "name": "_recipients",
+        "type": "address[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "_tokenIds",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "batchTransfer",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+];
+
 let web3;
 let accounts = [];
 let contract;
 let selectedNFTs = new Set();
 let userNFTs = [];
 let currency = {};
+let batchProxy; // Batch proxy contract instance
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('connectWallet').addEventListener('click', connectWallet);
@@ -225,7 +255,7 @@ async function optimizeGasSettings() {
   document.getElementById('suggestedGas').textContent = gasInfo.suggestedPrice.toFixed(2);
   document.getElementById('nativeToken').textContent = tokenInfo.symbol;
   document.getElementById('usdPrice').textContent = tokenInfo.usdPrice ? tokenInfo.usdPrice.toFixed(2) : '-';
-  
+
   updateStatus(`Recommended gas price: ${gasInfo.suggestedPrice.toFixed(2)} Gwei (Current: ${gasInfo.currentPriceGwei} Gwei)`);
 }
 
@@ -243,6 +273,11 @@ async function connectWallet() {
 
       web3 = new Web3(window.ethereum);
       contract = new web3.eth.Contract(ERC721_ABI, CONTRACT_ADDRESS);
+
+      // Initialize batch proxy if address is set
+      if (BATCH_PROXY_ADDRESS && BATCH_PROXY_ADDRESS !== '0x0000000000000000000000000000000000000000') {
+        batchProxy = new web3.eth.Contract(BATCH_PROXY_ABI, BATCH_PROXY_ADDRESS);
+      }
 
       document.getElementById('walletAddress').textContent = accounts[0];
       document.getElementById('transferBtn').disabled = false;
@@ -296,11 +331,11 @@ async function loadUserNFTs() {
 
   document.getElementById('nftLoader').style.display = 'block';
   updateStatus("Loading your NFTs...");
-  
+
   try {
     const balance = await contract.methods.balanceOf(accounts[0]).call();
     const balanceNum = parseInt(balance);
-    
+
     if (balanceNum === 0) {
       updateStatus("No NFTs found in your wallet for this contract");
       document.getElementById('nftLoader').style.display = 'none';
@@ -308,7 +343,7 @@ async function loadUserNFTs() {
     }
 
     userNFTs = [];
-    
+
     // Load token IDs
     for (let i = 0; i < balanceNum; i++) {
       try {
@@ -352,10 +387,10 @@ function displayNFTs() {
     const nftElement = document.createElement('div');
     nftElement.className = 'nft-item';
     nftElement.dataset.tokenId = nft.tokenId;
-    
+
     const imageUrl = nft.metadata?.image || '';
     const name = nft.metadata?.name || `Token #${nft.tokenId}`;
-    
+
     nftElement.innerHTML = `
       ${imageUrl ? 
         `<img src="${imageUrl}" alt="${name}" class="nft-image" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
@@ -365,7 +400,7 @@ function displayNFTs() {
       <div class="nft-id">ID: ${nft.tokenId}</div>
       <div class="nft-name">${name}</div>
     `;
-    
+
     nftElement.addEventListener('click', () => toggleNFTSelection(nft.tokenId));
     grid.appendChild(nftElement);
   });
@@ -373,7 +408,7 @@ function displayNFTs() {
 
 function toggleNFTSelection(tokenId) {
   const element = document.querySelector(`[data-token-id="${tokenId}"]`);
-  
+
   if (selectedNFTs.has(tokenId)) {
     selectedNFTs.delete(tokenId);
     element.classList.remove('selected');
@@ -381,14 +416,14 @@ function toggleNFTSelection(tokenId) {
     selectedNFTs.add(tokenId);
     element.classList.add('selected');
   }
-  
+
   updateSelectedCount();
   updateTokenIdsInput();
 }
 
 function toggleSelectAll() {
   const button = document.getElementById('toggleSelectAll');
-  
+
   if (selectedNFTs.size === userNFTs.length) {
     // Deselect all
     selectedNFTs.clear();
@@ -401,7 +436,7 @@ function toggleSelectAll() {
     document.querySelectorAll('.nft-item').forEach(el => el.classList.add('selected'));
     button.textContent = 'Deselect All';
   }
-  
+
   updateSelectedCount();
   updateTokenIdsInput();
 }
@@ -409,7 +444,7 @@ function toggleSelectAll() {
 function sortNFTs() {
   userNFTs.sort((a, b) => parseInt(a.tokenId) - parseInt(b.tokenId));
   displayNFTs();
-  
+
   // Restore selection state
   selectedNFTs.forEach(tokenId => {
     const element = document.querySelector(`[data-token-id="${tokenId}"]`);
@@ -430,7 +465,7 @@ function updateTokenIdsInput() {
 async function transferNFTs() {
   const recipient = document.getElementById('recipient').value.trim();
   let tokenIdsInput = document.getElementById('tokenIds').value.trim();
-  
+
   // Use selected NFTs if manual input is empty
   if (!tokenIdsInput && selectedNFTs.size > 0) {
     tokenIdsInput = Array.from(selectedNFTs).join(',');
@@ -457,7 +492,7 @@ async function transferNFTs() {
 
   try {
     const results = [];
-    
+
     // Check if recipient is valid (not zero address)
     if (recipient.toLowerCase() === '0x0000000000000000000000000000000000000000') {
       updateStatus('Invalid recipient (zero address)');
@@ -469,7 +504,7 @@ async function transferNFTs() {
     const invalidTokens = [];
 
     updateStatus('Validating token ownership...');
-    
+
     for (const tokenId of tokenIds) {
       try {
         const owner = await contract.methods.ownerOf(tokenId).call();
@@ -511,17 +546,62 @@ async function transferNFTs() {
     // Try different batch transfer methods in order of preference
     if (validTokenIds.length > 1) {
       let batchSuccess = false;
-      
+
+      // Use batch proxy if available
+      if (batchProxy) {
+        try {
+          updateStatus(`Attempting transfer via batch proxy...`);
+
+          const recipients = Array(validTokenIds.length).fill(recipient);
+
+          const estimatedGas = await batchProxy.methods.batchTransfer(
+            CONTRACT_ADDRESS,
+            recipients,
+            validTokenIds
+          ).estimateGas({ from: accounts[0] });
+
+          const gasSettings = {
+            gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
+            gas: Math.ceil(estimatedGas * 1.3) // Add 30% buffer for batch
+          };
+
+          const tx = await batchProxy.methods.batchTransfer(
+            CONTRACT_ADDRESS,
+            recipients,
+            validTokenIds
+          ).send({
+            from: accounts[0],
+            ...gasSettings
+          });
+
+          validTokenIds.forEach(tokenId => {
+            results.push({
+              tokenId,
+              status: 'Batch Transferred via Proxy',
+              txHash: tx.transactionHash,
+              gasUsed: Math.floor(tx.gasUsed / validTokenIds.length)
+            });
+            selectedNFTs.delete(tokenId);
+          });
+
+          updateStatus(`✅ Successfully batch transferred ${validTokenIds.length} NFTs via proxy in one transaction!`);
+          batchSuccess = true;
+        } catch (error) {
+          console.log('Batch proxy transfer failed:', error.message);
+        }
+      }
+
+
       // Method 1: Try ERC1155 batch transfer (if contract supports it)
       if (!batchSuccess) {
         try {
           updateStatus(`Checking ERC1155 batch transfer support...`);
-          
+
           // Check if contract has ERC1155 safeBatchTransferFrom
           const erc1155Method = contract.methods.safeBatchTransferFrom;
           if (erc1155Method) {
             const data = '0x'; // Empty data for ERC1155
-            
+
             const estimatedGas = await erc1155Method(
               accounts[0],
               recipient,
@@ -563,12 +643,12 @@ async function transferNFTs() {
           console.log('ERC1155 batch transfer failed:', error.message);
         }
       }
-      
+
       // Method 2: Try safeBatchTransferFrom
       if (!batchSuccess) {
         try {
           updateStatus(`Attempting batch transfer for ${validTokenIds.length} NFTs...`);
-          
+
           const estimatedGas = await contract.methods.safeBatchTransferFrom(
             accounts[0],
             recipient,
@@ -612,7 +692,7 @@ async function transferNFTs() {
       if (!batchSuccess) {
         try {
           updateStatus(`Trying multicall batch transfer...`);
-          
+
           // Create array of transfer call data
           const transferCalls = validTokenIds.map(tokenId => 
             contract.methods.safeTransferFrom(accounts[0], recipient, tokenId).encodeABI()
@@ -621,7 +701,7 @@ async function transferNFTs() {
           // Check if contract has multicall function
           if (contract.methods.multicall) {
             const estimatedGas = await contract.methods.multicall(transferCalls).estimateGas({ from: accounts[0] });
-            
+
             const gasSettings = {
               gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
               gas: Math.ceil(estimatedGas * 1.3)
@@ -662,7 +742,7 @@ async function transferNFTs() {
     if (validTokenIds.length > 0) {
       // Use individual transfers
       updateStatus(`Transferring ${validTokenIds.length} NFTs individually...`);
-      
+
       const gasSettings = {
         gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
         gas: 150000
@@ -676,11 +756,11 @@ async function transferNFTs() {
             recipient,
             tokenId
           ).estimateGas({ from: accounts[0] });
-          
+
           gasSettings.gas = Math.ceil(estimatedGas * 1.2); // Add 20% buffer
 
           updateStatus(`Transferring token ${tokenId}... (${validTokenIds.indexOf(tokenId) + 1}/${validTokenIds.length})`);
-          
+
           const tx = await contract.methods.safeTransferFrom(
             accounts[0],
             recipient,
@@ -700,7 +780,7 @@ async function transferNFTs() {
           selectedNFTs.delete(tokenId);
         } catch (error) {
           let errorMessage = error.message;
-          
+
           if (error.message.includes('revert')) {
             if (error.message.includes('ERC721: transfer caller is not owner nor approved')) {
               errorMessage = 'Not approved to transfer this token';
@@ -712,7 +792,7 @@ async function transferNFTs() {
               errorMessage = 'Transaction reverted by contract';
             }
           }
-          
+
           results.push({ 
             tokenId, 
             status: 'Failed', 
@@ -726,7 +806,7 @@ async function transferNFTs() {
     updateStatus('Transfer process completed!');
     updateSelectedCount();
     updateTokenIdsInput();
-    
+
     // Refresh NFT display
     if (userNFTs.length > 0) {
       await loadUserNFTs();
