@@ -496,40 +496,8 @@ async function transferNFTs() {
 
     const gasInfo = await getGasPrice();
 
-    // Check if we need bulk approval for multiple transfers
-    let needsApproval = false;
-    if (validTokenIds.length > 1) {
-      try {
-        const isApproved = await contract.methods.isApprovedForAll(accounts[0], accounts[0]).call();
-        needsApproval = !isApproved;
-      } catch (error) {
-        console.log('Could not check approval status, proceeding with transfers');
-      }
-    }
-
-    // If multiple tokens and not pre-approved, ask for bulk approval
-    if (needsApproval && validTokenIds.length > 1) {
-      updateStatus(`Setting approval for all tokens to reduce transaction count...`);
-      
-      try {
-        const approvalTx = await contract.methods.setApprovalForAll(accounts[0], true).send({
-          from: accounts[0],
-          gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
-          gas: 50000
-        });
-        
-        updateStatus(`Approval set! Now transferring ${validTokenIds.length} NFTs...`);
-        
-        results.push({
-          tokenId: 'Approval',
-          status: 'Approved All',
-          txHash: approvalTx.transactionHash,
-          gasUsed: approvalTx.gasUsed
-        });
-      } catch (error) {
-        updateStatus(`Approval failed, continuing with individual approvals: ${error.message}`);
-      }
-    }
+    // Note: Individual transfers will still require separate MetaMask confirmations
+    // This is normal behavior for security - each transaction needs user approval
 
     if (supportsBatch && validTokenIds.length > 1) {
       // Use batch transfer
