@@ -86,6 +86,15 @@ const ERC721_ABI = [
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "bytes[]", "name": "data", "type": "bytes[]"}
+    ],
+    "name": "multicall",
+    "outputs": [{"internalType": "bytes[]", "name": "results", "type": "bytes[]"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
 ];
 
@@ -499,67 +508,103 @@ async function transferNFTs() {
     // Note: Individual transfers will still require separate MetaMask confirmations
     // This is normal behavior for security - each transaction needs user approval
 
-    if (supportsBatch && validTokenIds.length > 1) {
-      // Use batch transfer
-      updateStatus(`Batch transferring ${validTokenIds.length} NFTs in one transaction...`);
+    // Try different batch transfer methods in order of preference
+    if (validTokenIds.length > 1) {
+      let batchSuccess = false;
       
-      try {
-        // Estimate gas for batch transfer
-        const estimatedGas = await contract.methods.safeBatchTransferFrom(
-          accounts[0],
-          recipient,
-          validTokenIds
-        ).estimateGas({ from: accounts[0] });
+      // Method 1: Try safeBatchTransferFrom
+      if (!batchSuccess) {
+        try {
+          updateStatus(`Attempting batch transfer for ${validTokenIds.length} NFTs...`);
+          
+          const estimatedGas = await contract.methods.safeBatchTransferFrom(
+            accounts[0],
+            recipient,
+            validTokenIds
+          ).estimateGas({ from: accounts[0] });
 
-        const gasSettings = {
-          gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
-          gas: Math.ceil(estimatedGas * 1.2) // Add 20% buffer
-        };
+          const gasSettings = {
+            gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
+            gas: Math.ceil(estimatedGas * 1.3) // Add 30% buffer for batch
+          };
 
-        const tx = await contract.methods.safeBatchTransferFrom(
-          accounts[0],
-          recipient,
-          validTokenIds
-        ).send({ 
-          from: accounts[0],
-          ...gasSettings
-        });
-
-        // All tokens transferred successfully
-        validTokenIds.forEach(tokenId => {
-          results.push({ 
-            tokenId, 
-            status: 'Batch Transferred', 
-            txHash: tx.transactionHash,
-            gasUsed: Math.floor(tx.gasUsed / validTokenIds.length) // Approximate gas per token
+          const tx = await contract.methods.safeBatchTransferFrom(
+            accounts[0],
+            recipient,
+            validTokenIds
+          ).send({ 
+            from: accounts[0],
+            ...gasSettings
           });
-          selectedNFTs.delete(tokenId);
-        });
 
-        updateStatus(`Successfully batch transferred ${validTokenIds.length} NFTs!`);
+          // All tokens transferred successfully in one transaction
+          validTokenIds.forEach(tokenId => {
+            results.push({ 
+              tokenId, 
+              status: 'Batch Transferred', 
+              txHash: tx.transactionHash,
+              gasUsed: Math.floor(tx.gasUsed / validTokenIds.length)
+            });
+            selectedNFTs.delete(tokenId);
+          });
 
-      } catch (error) {
-        let errorMessage = error.message;
-        
-        if (error.message.includes('revert')) {
-          if (error.message.includes('ERC721: transfer caller is not owner nor approved')) {
-            errorMessage = 'Not approved to transfer these tokens';
-          } else if (error.message.includes('ERC721: transfer to non ERC721Receiver implementer')) {
-            errorMessage = 'Recipient cannot receive NFTs';
-          } else {
-            errorMessage = 'Batch transfer reverted by contract';
-          }
+          updateStatus(`✅ Successfully batch transferred ${validTokenIds.length} NFTs in one transaction!`);
+          batchSuccess = true;
+
+        } catch (error) {
+          console.log('safeBatchTransferFrom failed, trying alternative methods:', error.message);
         }
-
-        // If batch fails, mark all as failed
-        validTokenIds.forEach(tokenId => {
-          results.push({ 
-            tokenId, 
-            status: 'Failed', 
-            message: errorMessage
-          });
-        });
       }
+
+      // Method 2: Try multicall pattern (if contract supports it)
+      if (!batchSuccess) {
+        try {
+          updateStatus(`Trying multicall batch transfer...`);
+          
+          // Create array of transfer call data
+          const transferCalls = validTokenIds.map(tokenId => 
+            contract.methods.safeTransferFrom(accounts[0], recipient, tokenId).encodeABI()
+          );
+
+          // Check if contract has multicall function
+          if (contract.methods.multicall) {
+            const estimatedGas = await contract.methods.multicall(transferCalls).estimateGas({ from: accounts[0] });
+            
+            const gasSettings = {
+              gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
+              gas: Math.ceil(estimatedGas * 1.3)
+            };
+
+            const tx = await contract.methods.multicall(transferCalls).send({ 
+              from: accounts[0],
+              ...gasSettings
+            });
+
+            validTokenIds.forEach(tokenId => {
+              results.push({ 
+                tokenId, 
+                status: 'Multicall Transferred', 
+                txHash: tx.transactionHash,
+                gasUsed: Math.floor(tx.gasUsed / validTokenIds.length)
+              });
+              selectedNFTs.delete(tokenId);
+            });
+
+            updateStatus(`✅ Successfully multicall transferred ${validTokenIds.length} NFTs in one transaction!`);
+            batchSuccess = true;
+          }
+        } catch (error) {
+          console.log('Multicall failed:', error.message);
+        }
+      }
+
+      // If batch methods failed, fall back to individual transfers
+      if (!batchSuccess) {
+        updateStatus(`Batch transfer not supported, using individual transfers...`);
+      } else {
+        return; // Exit if batch was successful
+      }
+    }
     } else {
       // Use individual transfers
       updateStatus(`Transferring ${validTokenIds.length} NFTs individually...`);
