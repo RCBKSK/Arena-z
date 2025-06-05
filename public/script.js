@@ -48,6 +48,23 @@ const ERC721_ABI = [
     "outputs": [{"internalType": "string", "name": "", "type": "string"}],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
+    "name": "getApproved",
+    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "owner", "type": "address"},
+      {"internalType": "address", "name": "operator", "type": "address"}
+    ],
+    "name": "isApprovedForAll",
+    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+    "stateMutability": "view",
+    "type": "function"
   }
 ];
 
@@ -413,19 +430,49 @@ async function transferNFTs() {
     const gasInfo = await getGasPrice();
     const gasSettings = {
       gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
-      gasLimit: 100000
+      gas: 150000 // Increased gas limit
     };
 
     for (const tokenId of tokenIds) {
       try {
+        // Check if token exists and get owner
+        let owner;
+        try {
+          owner = await contract.methods.ownerOf(tokenId).call();
+        } catch (error) {
+          results.push({ tokenId, status: 'Failed', message: 'Token does not exist' });
+          continue;
+        }
+
         // Check ownership
-        const owner = await contract.methods.ownerOf(tokenId).call();
         if (owner.toLowerCase() !== accounts[0].toLowerCase()) {
           results.push({ tokenId, status: 'Skipped', message: 'Not owned by you' });
           continue;
         }
 
-        updateStatus(`Transferring token ${tokenId}...`);
+        // Check if recipient is valid (not zero address)
+        if (recipient.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+          results.push({ tokenId, status: 'Failed', message: 'Invalid recipient (zero address)' });
+          continue;
+        }
+
+        // Estimate gas for this specific transfer
+        let estimatedGas;
+        try {
+          estimatedGas = await contract.methods.safeTransferFrom(
+            accounts[0],
+            recipient,
+            tokenId
+          ).estimateGas({ from: accounts[0] });
+          
+          gasSettings.gas = Math.ceil(estimatedGas * 1.2); // Add 20% buffer
+        } catch (gasError) {
+          results.push({ tokenId, status: 'Failed', message: `Gas estimation failed: ${gasError.message}` });
+          continue;
+        }
+
+        updateStatus(`Transferring token ${tokenId}... (Est. gas: ${estimatedGas})`);
+        
         const tx = await contract.methods.safeTransferFrom(
           accounts[0],
           recipient,
@@ -445,10 +492,25 @@ async function transferNFTs() {
         // Remove from selection after successful transfer
         selectedNFTs.delete(tokenId);
       } catch (error) {
+        let errorMessage = error.message;
+        
+        // Parse common error types
+        if (error.message.includes('revert')) {
+          if (error.message.includes('ERC721: transfer caller is not owner nor approved')) {
+            errorMessage = 'Not approved to transfer this token';
+          } else if (error.message.includes('ERC721: transfer to non ERC721Receiver implementer')) {
+            errorMessage = 'Recipient cannot receive NFTs';
+          } else if (error.message.includes('ERC721: transfer of token that is not own')) {
+            errorMessage = 'Token ownership changed during transfer';
+          } else {
+            errorMessage = 'Transaction reverted by contract';
+          }
+        }
+        
         results.push({ 
           tokenId, 
           status: 'Failed', 
-          message: error.message 
+          message: errorMessage 
         });
       }
     }
