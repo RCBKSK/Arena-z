@@ -549,7 +549,7 @@ async function transferNFTs() {
           });
 
           updateStatus(`✅ Successfully batch transferred ${validTokenIds.length} NFTs in one transaction!`);
-          batchSuccess = true;
+          batchSuccess = true; true;
 
         } catch (error) {
           console.log('safeBatchTransferFrom failed, trying alternative methods:', error.message);
@@ -605,7 +605,9 @@ async function transferNFTs() {
         return; // Exit if batch was successful
       }
     }
-    } else {
+
+    // Use individual transfers
+    if (validTokenIds.length > 0) {
       // Use individual transfers
       updateStatus(`Transferring ${validTokenIds.length} NFTs individually...`);
       
