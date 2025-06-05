@@ -65,6 +65,17 @@ const ERC721_ABI = [
     "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "from", "type": "address"},
+      {"internalType": "address", "name": "to", "type": "address"},
+      {"internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]"}
+    ],
+    "name": "safeBatchTransferFrom",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
 ];
 
@@ -427,91 +438,175 @@ async function transferNFTs() {
 
   try {
     const results = [];
-    const gasInfo = await getGasPrice();
-    const gasSettings = {
-      gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
-      gas: 150000 // Increased gas limit
-    };
+    
+    // Check if recipient is valid (not zero address)
+    if (recipient.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+      updateStatus('Invalid recipient (zero address)');
+      return;
+    }
 
+    // Validate ownership for all tokens first
+    const validTokenIds = [];
+    const invalidTokens = [];
+
+    updateStatus('Validating token ownership...');
+    
     for (const tokenId of tokenIds) {
       try {
-        // Check if token exists and get owner
-        let owner;
+        const owner = await contract.methods.ownerOf(tokenId).call();
+        if (owner.toLowerCase() === accounts[0].toLowerCase()) {
+          validTokenIds.push(tokenId);
+        } else {
+          invalidTokens.push({ tokenId, message: 'Not owned by you' });
+        }
+      } catch (error) {
+        invalidTokens.push({ tokenId, message: 'Token does not exist' });
+      }
+    }
+
+    // Add invalid tokens to results
+    invalidTokens.forEach(item => {
+      results.push({ tokenId: item.tokenId, status: 'Skipped', message: item.message });
+    });
+
+    if (validTokenIds.length === 0) {
+      updateStatus('No valid tokens to transfer');
+      displayResults(results);
+      return;
+    }
+
+    // Check if contract supports batch transfer
+    let supportsBatch = false;
+    try {
+      await contract.methods.safeBatchTransferFrom(accounts[0], recipient, []).estimateGas({ from: accounts[0] });
+      supportsBatch = true;
+    } catch (error) {
+      console.log('Contract does not support batch transfer, using individual transfers');
+    }
+
+    const gasInfo = await getGasPrice();
+
+    if (supportsBatch && validTokenIds.length > 1) {
+      // Use batch transfer
+      updateStatus(`Batch transferring ${validTokenIds.length} NFTs in one transaction...`);
+      
+      try {
+        // Estimate gas for batch transfer
+        const estimatedGas = await contract.methods.safeBatchTransferFrom(
+          accounts[0],
+          recipient,
+          validTokenIds
+        ).estimateGas({ from: accounts[0] });
+
+        const gasSettings = {
+          gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
+          gas: Math.ceil(estimatedGas * 1.2) // Add 20% buffer
+        };
+
+        const tx = await contract.methods.safeBatchTransferFrom(
+          accounts[0],
+          recipient,
+          validTokenIds
+        ).send({ 
+          from: accounts[0],
+          ...gasSettings
+        });
+
+        // All tokens transferred successfully
+        validTokenIds.forEach(tokenId => {
+          results.push({ 
+            tokenId, 
+            status: 'Batch Transferred', 
+            txHash: tx.transactionHash,
+            gasUsed: Math.floor(tx.gasUsed / validTokenIds.length) // Approximate gas per token
+          });
+          selectedNFTs.delete(tokenId);
+        });
+
+        updateStatus(`Successfully batch transferred ${validTokenIds.length} NFTs!`);
+
+      } catch (error) {
+        let errorMessage = error.message;
+        
+        if (error.message.includes('revert')) {
+          if (error.message.includes('ERC721: transfer caller is not owner nor approved')) {
+            errorMessage = 'Not approved to transfer these tokens';
+          } else if (error.message.includes('ERC721: transfer to non ERC721Receiver implementer')) {
+            errorMessage = 'Recipient cannot receive NFTs';
+          } else {
+            errorMessage = 'Batch transfer reverted by contract';
+          }
+        }
+
+        // If batch fails, mark all as failed
+        validTokenIds.forEach(tokenId => {
+          results.push({ 
+            tokenId, 
+            status: 'Failed', 
+            message: errorMessage
+          });
+        });
+      }
+    } else {
+      // Use individual transfers
+      updateStatus(`Transferring ${validTokenIds.length} NFTs individually...`);
+      
+      const gasSettings = {
+        gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
+        gas: 150000
+      };
+
+      for (const tokenId of validTokenIds) {
         try {
-          owner = await contract.methods.ownerOf(tokenId).call();
-        } catch (error) {
-          results.push({ tokenId, status: 'Failed', message: 'Token does not exist' });
-          continue;
-        }
-
-        // Check ownership
-        if (owner.toLowerCase() !== accounts[0].toLowerCase()) {
-          results.push({ tokenId, status: 'Skipped', message: 'Not owned by you' });
-          continue;
-        }
-
-        // Check if recipient is valid (not zero address)
-        if (recipient.toLowerCase() === '0x0000000000000000000000000000000000000000') {
-          results.push({ tokenId, status: 'Failed', message: 'Invalid recipient (zero address)' });
-          continue;
-        }
-
-        // Estimate gas for this specific transfer
-        let estimatedGas;
-        try {
-          estimatedGas = await contract.methods.safeTransferFrom(
+          // Estimate gas for this specific transfer
+          const estimatedGas = await contract.methods.safeTransferFrom(
             accounts[0],
             recipient,
             tokenId
           ).estimateGas({ from: accounts[0] });
           
           gasSettings.gas = Math.ceil(estimatedGas * 1.2); // Add 20% buffer
-        } catch (gasError) {
-          results.push({ tokenId, status: 'Failed', message: `Gas estimation failed: ${gasError.message}` });
-          continue;
-        }
 
-        updateStatus(`Transferring token ${tokenId}... (Est. gas: ${estimatedGas})`);
-        
-        const tx = await contract.methods.safeTransferFrom(
-          accounts[0],
-          recipient,
-          tokenId
-        ).send({ 
-          from: accounts[0],
-          ...gasSettings
-        });
+          updateStatus(`Transferring token ${tokenId}... (${validTokenIds.indexOf(tokenId) + 1}/${validTokenIds.length})`);
+          
+          const tx = await contract.methods.safeTransferFrom(
+            accounts[0],
+            recipient,
+            tokenId
+          ).send({ 
+            from: accounts[0],
+            ...gasSettings
+          });
 
-        results.push({ 
-          tokenId, 
-          status: 'Transferred', 
-          txHash: tx.transactionHash,
-          gasUsed: tx.gasUsed
-        });
+          results.push({ 
+            tokenId, 
+            status: 'Transferred', 
+            txHash: tx.transactionHash,
+            gasUsed: tx.gasUsed
+          });
 
-        // Remove from selection after successful transfer
-        selectedNFTs.delete(tokenId);
-      } catch (error) {
-        let errorMessage = error.message;
-        
-        // Parse common error types
-        if (error.message.includes('revert')) {
-          if (error.message.includes('ERC721: transfer caller is not owner nor approved')) {
-            errorMessage = 'Not approved to transfer this token';
-          } else if (error.message.includes('ERC721: transfer to non ERC721Receiver implementer')) {
-            errorMessage = 'Recipient cannot receive NFTs';
-          } else if (error.message.includes('ERC721: transfer of token that is not own')) {
-            errorMessage = 'Token ownership changed during transfer';
-          } else {
-            errorMessage = 'Transaction reverted by contract';
+          selectedNFTs.delete(tokenId);
+        } catch (error) {
+          let errorMessage = error.message;
+          
+          if (error.message.includes('revert')) {
+            if (error.message.includes('ERC721: transfer caller is not owner nor approved')) {
+              errorMessage = 'Not approved to transfer this token';
+            } else if (error.message.includes('ERC721: transfer to non ERC721Receiver implementer')) {
+              errorMessage = 'Recipient cannot receive NFTs';
+            } else if (error.message.includes('ERC721: transfer of token that is not own')) {
+              errorMessage = 'Token ownership changed during transfer';
+            } else {
+              errorMessage = 'Transaction reverted by contract';
+            }
           }
+          
+          results.push({ 
+            tokenId, 
+            status: 'Failed', 
+            message: errorMessage 
+          });
         }
-        
-        results.push({ 
-          tokenId, 
-          status: 'Failed', 
-          message: errorMessage 
-        });
       }
     }
 
