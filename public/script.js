@@ -512,7 +512,59 @@ async function transferNFTs() {
     if (validTokenIds.length > 1) {
       let batchSuccess = false;
       
-      // Method 1: Try safeBatchTransferFrom
+      // Method 1: Try ERC1155 batch transfer (if contract supports it)
+      if (!batchSuccess) {
+        try {
+          updateStatus(`Checking ERC1155 batch transfer support...`);
+          
+          // Check if contract has ERC1155 safeBatchTransferFrom
+          const erc1155Method = contract.methods.safeBatchTransferFrom;
+          if (erc1155Method) {
+            const data = '0x'; // Empty data for ERC1155
+            
+            const estimatedGas = await erc1155Method(
+              accounts[0],
+              recipient,
+              validTokenIds,
+              validTokenIds.map(() => 1), // quantities (1 for each NFT)
+              data
+            ).estimateGas({ from: accounts[0] });
+
+            const gasSettings = {
+              gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
+              gas: Math.ceil(estimatedGas * 1.3)
+            };
+
+            const tx = await erc1155Method(
+              accounts[0],
+              recipient,
+              validTokenIds,
+              validTokenIds.map(() => 1),
+              data
+            ).send({ 
+              from: accounts[0],
+              ...gasSettings
+            });
+
+            validTokenIds.forEach(tokenId => {
+              results.push({ 
+                tokenId, 
+                status: 'ERC1155 Batch Transferred', 
+                txHash: tx.transactionHash,
+                gasUsed: Math.floor(tx.gasUsed / validTokenIds.length)
+              });
+              selectedNFTs.delete(tokenId);
+            });
+
+            updateStatus(`✅ Successfully ERC1155 batch transferred ${validTokenIds.length} NFTs!`);
+            batchSuccess = true;
+          }
+        } catch (error) {
+          console.log('ERC1155 batch transfer failed:', error.message);
+        }
+      }
+      
+      // Method 2: Try safeBatchTransferFrom
       if (!batchSuccess) {
         try {
           updateStatus(`Attempting batch transfer for ${validTokenIds.length} NFTs...`);
