@@ -1,11 +1,14 @@
+
 // Contract details
 const CONTRACT_ADDRESS = '0x241B47bDE91B7d1843cA34Fc694D4e6926f3B83e';
 const CHAIN_ID = 7897;
 const RPC_URL = 'https://rpc.arena-z.gg';
 const EXPLORER_URL = 'https://explorer.arena-z.gg';
-const BATCH_SIZE = 5; // Optimal batch size for Arena-Z Chain
 
-// Enhanced ERC721 ABI with batch transfer support
+// Optional: Address of the batch transfer proxy contract
+const BATCH_PROXY_ADDRESS = ''; // Replace with your deployed proxy address
+
+// Enhanced ERC721 ABI with additional functions
 const ERC721_ABI = [
   {
     "inputs": [
@@ -26,12 +29,73 @@ const ERC721_ABI = [
     "type": "function"
   },
   {
+    "inputs": [{"internalType": "address", "name": "owner", "type": "address"}],
+    "name": "balanceOf",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
+      {"internalType": "address", "name": "owner", "type": "address"},
+      {"internalType": "uint256", "name": "index", "type": "uint256"}
+    ],
+    "name": "tokenOfOwnerByIndex",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
+    "name": "tokenURI",
+    "outputs": [{"internalType": "string", "name": "", "type": "string"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
+    "name": "getApproved",
+    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "owner", "type": "address"},
+      {"internalType": "address", "name": "operator", "type": "address"}
+    ],
+    "name": "isApprovedForAll",
+    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "operator", "type": "address"},
+      {"internalType": "bool", "name": "approved", "type": "bool"}
+    ],
+    "name": "setApprovalForAll",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "from", "type": "address"},
       {"internalType": "address", "name": "to", "type": "address"},
       {"internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]"}
     ],
-    "name": "batchTransfer",
+    "name": "safeBatchTransferFrom",
     "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "bytes[]", "name": "data", "type": "bytes[]"}
+    ],
+    "name": "multicall",
+    "outputs": [{"internalType": "bytes[]", "name": "results", "type": "bytes[]"}],
     "stateMutability": "nonpayable",
     "type": "function"
   }
@@ -40,15 +104,49 @@ const ERC721_ABI = [
 let web3;
 let accounts = [];
 let contract;
-let gasHistory = [];
+let selectedNFTs = new Set();
+let userNFTs = [];
+let currency = {};
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('connectWallet').addEventListener('click', connectWallet);
+  document.getElementById('loadNFTs').addEventListener('click', loadUserNFTs);
   document.getElementById('transferBtn').addEventListener('click', transferNFTs);
   document.getElementById('optimizeGas').addEventListener('click', optimizeGasSettings);
+  document.getElementById('toggleSelectAll').addEventListener('click', toggleSelectAll);
+  document.getElementById('sortBtn').addEventListener('click', sortNFTs);
 });
 
-// Gas optimization functions
+// Native token and gas optimization functions
+async function getNativeTokenInfo() {
+  try {
+    const provider = web3;
+    const network = await provider.eth.net.getId();
+    const chainId = network;
+
+    currency = {
+      chainId,
+      chainName: 'Arena-Z Chain',
+      symbol: 'ETH',
+      name: 'Ether',
+      decimals: 18,
+      usdPrice: null
+    };
+
+    return currency;
+  } catch (error) {
+    console.error("Error getting native token info:", error);
+    return {
+      chainId: CHAIN_ID,
+      chainName: 'Arena-Z Chain',
+      symbol: 'ETH',
+      name: 'Ether',
+      decimals: 18,
+      usdPrice: null
+    };
+  }
+}
+
 async function getGasPrice() {
   try {
     const gasPrice = await web3.eth.getGasPrice();
@@ -56,7 +154,7 @@ async function getGasPrice() {
     return {
       gasPrice,
       currentPriceGwei,
-      suggestedPrice: Math.max(1, parseFloat(currentPriceGwei) * 0.8) // 20% lower than current
+      suggestedPrice: Math.max(1, parseFloat(currentPriceGwei) * 0.8)
     };
   } catch (error) {
     console.error("Error getting gas price:", error);
@@ -76,18 +174,14 @@ async function optimizeGasSettings() {
 
   updateStatus("Optimizing gas settings...");
   const gasInfo = await getGasPrice();
+  const tokenInfo = await getNativeTokenInfo();
 
   document.getElementById('currentGas').textContent = gasInfo.currentPriceGwei;
-  document.getElementById('suggestedGas').textContent = gasInfo.suggestedPrice;
-  updateStatus(`Recommended gas price: ${gasInfo.suggestedPrice} Gwei (Current: ${gasInfo.currentPriceGwei} Gwei)`);
-}
+  document.getElementById('suggestedGas').textContent = gasInfo.suggestedPrice.toFixed(2);
+  document.getElementById('nativeToken').textContent = tokenInfo.symbol;
+  document.getElementById('usdPrice').textContent = tokenInfo.usdPrice ? tokenInfo.usdPrice.toFixed(2) : '-';
 
-async function getOptimalGasSettings() {
-  const gasInfo = await getGasPrice();
-  return {
-    gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
-    gasLimit: 50000 // Adjusted for Arena-Z Chain
-  };
+  updateStatus(`Recommended gas price: ${gasInfo.suggestedPrice.toFixed(2)} Gwei (Current: ${gasInfo.currentPriceGwei} Gwei)`);
 }
 
 // Wallet connection
@@ -108,9 +202,9 @@ async function connectWallet() {
       document.getElementById('walletAddress').textContent = accounts[0];
       document.getElementById('transferBtn').disabled = false;
       document.getElementById('optimizeGas').disabled = false;
+      document.getElementById('loadNFTs').disabled = false;
       updateStatus('Wallet connected successfully');
 
-      // Initialize gas optimization
       await optimizeGasSettings();
     } catch (error) {
       console.error('Error connecting wallet:', error);
@@ -147,13 +241,153 @@ async function switchToArenaZChain() {
   }
 }
 
+// NFT loading and management
+async function loadUserNFTs() {
+  if (!contract || !accounts[0]) {
+    updateStatus("Please connect wallet first");
+    return;
+  }
+
+  document.getElementById('nftLoader').style.display = 'block';
+  updateStatus("Loading your NFTs...");
+
+  try {
+    const balance = await contract.methods.balanceOf(accounts[0]).call();
+    const balanceNum = parseInt(balance);
+
+    if (balanceNum === 0) {
+      updateStatus("No NFTs found in your wallet for this contract");
+      document.getElementById('nftLoader').style.display = 'none';
+      return;
+    }
+
+    userNFTs = [];
+
+    // Load token IDs
+    for (let i = 0; i < balanceNum; i++) {
+      try {
+        const tokenId = await contract.methods.tokenOfOwnerByIndex(accounts[0], i).call();
+        userNFTs.push({ tokenId, metadata: null });
+      } catch (error) {
+        console.warn(`Error getting token at index ${i}:`, error);
+      }
+    }
+
+    // Load metadata for each NFT
+    for (let nft of userNFTs) {
+      try {
+        const tokenURI = await contract.methods.tokenURI(nft.tokenId).call();
+        if (tokenURI) {
+          const response = await fetch(tokenURI);
+          const metadata = await response.json();
+          nft.metadata = metadata;
+        }
+      } catch (error) {
+        console.warn(`Error loading metadata for token ${nft.tokenId}:`, error);
+      }
+    }
+
+    displayNFTs();
+    document.querySelector('.nft-controls').style.display = 'block';
+    updateStatus(`Loaded ${userNFTs.length} NFTs`);
+  } catch (error) {
+    console.error("Error loading NFTs:", error);
+    updateStatus(`Error loading NFTs: ${error.message}`);
+  } finally {
+    document.getElementById('nftLoader').style.display = 'none';
+  }
+}
+
+function displayNFTs() {
+  const grid = document.getElementById('nftGrid');
+  grid.innerHTML = '';
+
+  userNFTs.forEach(nft => {
+    const nftElement = document.createElement('div');
+    nftElement.className = 'nft-item';
+    nftElement.dataset.tokenId = nft.tokenId;
+
+    const imageUrl = nft.metadata?.image || '';
+    const name = nft.metadata?.name || `Token #${nft.tokenId}`;
+
+    nftElement.innerHTML = `
+      ${imageUrl ? 
+        `<img src="${imageUrl}" alt="${name}" class="nft-image" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+         <div class="nft-placeholder" style="display: none;">No Image</div>` :
+        `<div class="nft-placeholder">No Image</div>`
+      }
+      <div class="nft-id">ID: ${nft.tokenId}</div>
+      <div class="nft-name">${name}</div>
+    `;
+
+    nftElement.addEventListener('click', () => toggleNFTSelection(nft.tokenId));
+    grid.appendChild(nftElement);
+  });
+}
+
+function toggleNFTSelection(tokenId) {
+  const element = document.querySelector(`[data-token-id="${tokenId}"]`);
+
+  if (selectedNFTs.has(tokenId)) {
+    selectedNFTs.delete(tokenId);
+    element.classList.remove('selected');
+  } else {
+    selectedNFTs.add(tokenId);
+    element.classList.add('selected');
+  }
+
+  updateSelectedCount();
+  updateTokenIdsInput();
+}
+
+function toggleSelectAll() {
+  const button = document.getElementById('toggleSelectAll');
+
+  if (selectedNFTs.size === userNFTs.length) {
+    selectedNFTs.clear();
+    document.querySelectorAll('.nft-item').forEach(el => el.classList.remove('selected'));
+    button.textContent = 'Select All';
+  } else {
+    selectedNFTs.clear();
+    userNFTs.forEach(nft => selectedNFTs.add(nft.tokenId));
+    document.querySelectorAll('.nft-item').forEach(el => el.classList.add('selected'));
+    button.textContent = 'Deselect All';
+  }
+
+  updateSelectedCount();
+  updateTokenIdsInput();
+}
+
+function sortNFTs() {
+  userNFTs.sort((a, b) => parseInt(a.tokenId) - parseInt(b.tokenId));
+  displayNFTs();
+
+  selectedNFTs.forEach(tokenId => {
+    const element = document.querySelector(`[data-token-id="${tokenId}"]`);
+    if (element) element.classList.add('selected');
+  });
+}
+
+function updateSelectedCount() {
+  document.getElementById('selectedCount').textContent = `${selectedNFTs.size} selected`;
+}
+
+function updateTokenIdsInput() {
+  const tokenIdsArray = Array.from(selectedNFTs);
+  document.getElementById('tokenIds').value = tokenIdsArray.join(',');
+}
+
 // Transfer functions
 async function transferNFTs() {
   const recipient = document.getElementById('recipient').value.trim();
-  const tokenIdsInput = document.getElementById('tokenIds').value.trim();
+  let tokenIdsInput = document.getElementById('tokenIds').value.trim();
+
+  if (!tokenIdsInput && selectedNFTs.size > 0) {
+    tokenIdsInput = Array.from(selectedNFTs).join(',');
+  }
 
   if (!recipient || !tokenIdsInput) {
-    updateStatus('Please fill all fields');
+    updateStatus('Please fill recipient address and select NFTs or enter token IDs');
     return;
   }
 
@@ -164,7 +398,7 @@ async function transferNFTs() {
 
   const tokenIds = tokenIdsInput.split(',').map(id => id.trim()).filter(id => id);
   if (tokenIds.length === 0) {
-    updateStatus('Please enter at least one token ID');
+    updateStatus('Please select NFTs or enter at least one token ID');
     return;
   }
 
@@ -173,22 +407,109 @@ async function transferNFTs() {
 
   try {
     const results = [];
-    const gasSettings = await getOptimalGasSettings();
 
-    // Check if batch transfer is available
-    const hasBatchTransfer = await checkBatchTransferSupport();
+    if (recipient.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+      updateStatus('Invalid recipient (zero address)');
+      return;
+    }
 
-    if (hasBatchTransfer && tokenIds.length > 1) {
-      updateStatus("Using batch transfer for gas optimization...");
-      await batchTransferNFTs(recipient, tokenIds, gasSettings, results);
-    } else {
-      updateStatus("Using individual transfers...");
-      await individualTransfers(recipient, tokenIds, gasSettings, results);
+    const validTokenIds = [];
+    const invalidTokens = [];
+
+    updateStatus('Validating token ownership...');
+
+    for (const tokenId of tokenIds) {
+      try {
+        const owner = await contract.methods.ownerOf(tokenId).call();
+        if (owner.toLowerCase() === accounts[0].toLowerCase()) {
+          validTokenIds.push(tokenId);
+        } else {
+          invalidTokens.push({ tokenId, message: 'Not owned by you' });
+        }
+      } catch (error) {
+        invalidTokens.push({ tokenId, message: 'Token does not exist' });
+      }
+    }
+
+    invalidTokens.forEach(item => {
+      results.push({ tokenId: item.tokenId, status: 'Skipped', message: item.message });
+    });
+
+    if (validTokenIds.length === 0) {
+      updateStatus('No valid tokens to transfer');
+      displayResults(results);
+      return;
+    }
+
+    const gasInfo = await getGasPrice();
+
+    updateStatus(`Transferring ${validTokenIds.length} NFTs individually...`);
+
+    const gasSettings = {
+      gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
+      gas: 150000
+    };
+
+    for (const tokenId of validTokenIds) {
+      try {
+        const estimatedGas = await contract.methods.safeTransferFrom(
+          accounts[0],
+          recipient,
+          tokenId
+        ).estimateGas({ from: accounts[0] });
+
+        gasSettings.gas = Math.ceil(estimatedGas * 1.2);
+
+        updateStatus(`Transferring token ${tokenId}... (${validTokenIds.indexOf(tokenId) + 1}/${validTokenIds.length})`);
+
+        const tx = await contract.methods.safeTransferFrom(
+          accounts[0],
+          recipient,
+          tokenId
+        ).send({ 
+          from: accounts[0],
+          ...gasSettings
+        });
+
+        results.push({ 
+          tokenId, 
+          status: 'Transferred', 
+          txHash: tx.transactionHash,
+          gasUsed: tx.gasUsed
+        });
+
+        selectedNFTs.delete(tokenId);
+      } catch (error) {
+        let errorMessage = error.message;
+
+        if (error.message.includes('revert')) {
+          if (error.message.includes('ERC721: transfer caller is not owner nor approved')) {
+            errorMessage = 'Not approved to transfer this token';
+          } else if (error.message.includes('ERC721: transfer to non ERC721Receiver implementer')) {
+            errorMessage = 'Recipient cannot receive NFTs';
+          } else if (error.message.includes('ERC721: transfer of token that is not own')) {
+            errorMessage = 'Token ownership changed during transfer';
+          } else {
+            errorMessage = 'Transaction reverted by contract';
+          }
+        }
+
+        results.push({ 
+          tokenId, 
+          status: 'Failed', 
+          message: errorMessage 
+        });
+      }
     }
 
     displayResults(results);
     updateStatus('Transfer process completed!');
-    updateGasHistory(results);
+    updateSelectedCount();
+    updateTokenIdsInput();
+
+    if (userNFTs.length > 0) {
+      await loadUserNFTs();
+    }
   } catch (error) {
     console.error('Error in transfer process:', error);
     updateStatus(`Error: ${error.message}`);
@@ -197,108 +518,6 @@ async function transferNFTs() {
   }
 }
 
-async function checkBatchTransferSupport() {
-  try {
-    const batchTransferAbi = ERC721_ABI.find(item => item.name === "batchTransfer");
-    if (!batchTransferAbi) return false;
-
-    // Check if the contract actually implements it
-    await contract.methods.batchTransfer(accounts[0], []).call();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function batchTransferNFTs(recipient, tokenIds, gasSettings, results) {
-  const batches = [];
-  for (let i = 0; i < tokenIds.length; i += BATCH_SIZE) {
-    batches.push(tokenIds.slice(i, i + BATCH_SIZE));
-  }
-
-  for (const batch of batches) {
-    try {
-      // Verify ownership for all in batch
-      const ownershipChecks = await Promise.all(
-        batch.map(tokenId => contract.methods.ownerOf(tokenId).call())
-      );
-
-      const validBatch = batch.filter((tokenId, index) => 
-        ownershipChecks[index].toLowerCase() === accounts[0].toLowerCase()
-      );
-
-      if (validBatch.length === 0) {
-        batch.forEach(tokenId => {
-          results.push({ tokenId, status: 'Skipped', message: 'Not owned by you' });
-        });
-        continue;
-      }
-
-      updateStatus(`Transferring batch of ${validBatch.length} NFTs...`);
-      const tx = await contract.methods.batchTransfer(
-        recipient,
-        validBatch
-      ).send({ 
-        from: accounts[0],
-        ...gasSettings
-      });
-
-      validBatch.forEach(tokenId => {
-        results.push({ 
-          tokenId, 
-          status: 'Batch Transferred', 
-          txHash: tx.transactionHash,
-          gasUsed: tx.gasUsed
-        });
-      });
-    } catch (error) {
-      batch.forEach(tokenId => {
-        results.push({ 
-          tokenId, 
-          status: 'Failed', 
-          message: error.message 
-        });
-      });
-    }
-  }
-}
-
-async function individualTransfers(recipient, tokenIds, gasSettings, results) {
-  for (const tokenId of tokenIds) {
-    try {
-      const owner = await contract.methods.ownerOf(tokenId).call();
-      if (owner.toLowerCase() !== accounts[0].toLowerCase()) {
-        results.push({ tokenId, status: 'Skipped', message: 'Not owned by you' });
-        continue;
-      }
-
-      updateStatus(`Transferring token ${tokenId}...`);
-      const tx = await contract.methods.safeTransferFrom(
-        accounts[0],
-        recipient,
-        tokenId
-      ).send({ 
-        from: accounts[0],
-        ...gasSettings
-      });
-
-      results.push({ 
-        tokenId, 
-        status: 'Transferred', 
-        txHash: tx.transactionHash,
-        gasUsed: tx.gasUsed
-      });
-    } catch (error) {
-      results.push({ 
-        tokenId, 
-        status: 'Failed', 
-        message: error.message 
-      });
-    }
-  }
-}
-
-// UI functions
 function updateStatus(message) {
   document.getElementById('status').textContent = message;
   console.log(message);
@@ -337,22 +556,7 @@ function displayResults(results) {
   });
 
   resultsDiv.appendChild(table);
-  resultsDiv.innerHTML += `<p>Total gas used: ${totalGas} (≈${web3.utils.fromWei(totalGas.toString(), 'gwei')} Gwei)</p>`;
-}
-
-function updateGasHistory(results) {
-  const successfulTransfers = results.filter(r => r.status.includes('Transferred'));
-  if (successfulTransfers.length > 0) {
-    const avgGas = successfulTransfers.reduce((sum, r) => sum + (r.gasUsed || 0), 0) / successfulTransfers.length;
-    gasHistory.push({
-      timestamp: new Date().toISOString(),
-      avgGas,
-      count: successfulTransfers.length
-    });
-
-    // Keep only last 5 entries
-    if (gasHistory.length > 5) {
-      gasHistory.shift();
-    }
+  if (totalGas > 0) {
+    resultsDiv.innerHTML += `<p>Total gas used: ${totalGas}</p>`;
   }
 }
