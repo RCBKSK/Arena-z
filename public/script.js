@@ -5,7 +5,7 @@ const RPC_URL = 'https://rpc.arena-z.gg';
 const EXPLORER_URL = 'https://explorer.arena-z.gg';
 
 // BatchFactory contract address (deploy this once)
-const BATCH_FACTORY_ADDRESS = ''; // Replace with your deployed BatchFactory address
+const BATCH_FACTORY_ADDRESS = '0x0000000000000000000000000000000000000000'; // Replace with your deployed BatchFactory address
 
 // Cache for user's personal batch contract
 let userBatchContract = null;
@@ -169,44 +169,119 @@ const BATCH_TRANSFER_ABI = [
     }
 ];
 
+// Function to check if user has a batch contract
+async function checkUserBatchContract() {
+    if (!BATCH_FACTORY_ADDRESS || BATCH_FACTORY_ADDRESS === '0x0000000000000000000000000000000000000000') {
+        updateBatchStatus('BatchFactory not deployed yet. Deploy BatchFactory first.', 'error');
+        return null;
+    }
+
+    if (!web3) {
+        updateBatchStatus('Please connect wallet first', 'error');
+        return null;
+    }
+    
+    try {
+        const userAddress = accounts[0];
+        const salt = 1; // User-specific salt
+        
+        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_ABI, BATCH_FACTORY_ADDRESS);
+        
+        // Check if user already has a batch contract
+        const batchExists = await factoryContract.methods.batchExists(userAddress, salt).call();
+        
+        if (batchExists) {
+            // Get existing contract address
+            const batchAddress = await factoryContract.methods.getBatchAddress(userAddress, salt).call();
+            userBatchContract = batchAddress;
+            updateBatchStatus(`✅ Your batch contract: ${batchAddress}`, 'success');
+            return batchAddress;
+        } else {
+            updateBatchStatus('❌ No batch contract found. Deploy one to enable efficient batch transfers!', 'info');
+            return null;
+        }
+    } catch (error) {
+        console.error('Error checking batch contract:', error);
+        updateBatchStatus(`Error checking batch contract: ${error.message}`, 'error');
+        return null;
+    }
+}
+
+// Function to deploy user's batch contract
+async function deployUserBatchContract() {
+    if (!BATCH_FACTORY_ADDRESS || BATCH_FACTORY_ADDRESS === '0x0000000000000000000000000000000000000000') {
+        updateBatchStatus('BatchFactory not deployed yet. Deploy BatchFactory first.', 'error');
+        return;
+    }
+
+    if (!web3) {
+        updateBatchStatus('Please connect wallet first', 'error');
+        return;
+    }
+    
+    try {
+        updateBatchStatus('Deploying your personal batch contract...', 'info');
+        document.getElementById('deployBatchBtn').disabled = true;
+        
+        const userAddress = accounts[0];
+        const salt = 1; // User-specific salt
+        
+        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_ABI, BATCH_FACTORY_ADDRESS);
+        
+        // Check if user already has a batch contract
+        const batchExists = await factoryContract.methods.batchExists(userAddress, salt).call();
+        
+        if (batchExists) {
+            const batchAddress = await factoryContract.methods.getBatchAddress(userAddress, salt).call();
+            userBatchContract = batchAddress;
+            updateBatchStatus(`✅ You already have a batch contract: ${batchAddress}`, 'success');
+            return;
+        }
+        
+        // Deploy new batch contract
+        const gasEstimate = await factoryContract.methods.deployBatch(salt).estimateGas({ from: userAddress });
+        
+        const tx = await factoryContract.methods.deployBatch(salt).send({ 
+            from: userAddress,
+            gas: Math.ceil(gasEstimate * 1.2)
+        });
+        
+        // Get deployed address
+        const batchAddress = await factoryContract.methods.getBatchAddress(userAddress, salt).call();
+        userBatchContract = batchAddress;
+        
+        updateBatchStatus(`✅ Successfully deployed your batch contract: ${batchAddress}`, 'success');
+        console.log('Deployed batch contract:', batchAddress);
+        
+    } catch (error) {
+        console.error('Error deploying batch contract:', error);
+        updateBatchStatus(`Error deploying batch contract: ${error.message}`, 'error');
+    } finally {
+        document.getElementById('deployBatchBtn').disabled = false;
+    }
+}
+
+// Function to update batch contract status
+function updateBatchStatus(message, type) {
+    const statusDiv = document.getElementById('batchContractStatus');
+    statusDiv.textContent = message;
+    statusDiv.className = `batch-status ${type}`;
+}
+
 // Function to get or deploy user's batch contract
 async function getUserBatchContract() {
-    if (!BATCH_FACTORY_ADDRESS) {
-        throw new Error('BatchFactory not deployed. Please deploy BatchFactory first.');
+    if (userBatchContract) {
+        return userBatchContract;
     }
     
-    const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-    const userAddress = accounts[0];
-    const salt = 1; // You can make this user-specific or random
-    
-    const factoryContract = new ethers.Contract(BATCH_FACTORY_ADDRESS, BATCH_FACTORY_ABI, provider);
-    
-    // Check if user already has a batch contract
-    const batchExists = await factoryContract.batchExists(userAddress, salt);
-    
-    if (batchExists) {
-        // Get existing contract address
-        const batchAddress = await factoryContract.getBatchAddress(userAddress, salt);
-        console.log('Using existing batch contract:', batchAddress);
-        return batchAddress;
-    } else {
-        // Deploy new batch contract
-        const signer = new ethers.BrowserProvider(window.ethereum).getSigner();
-        const factoryWithSigner = factoryContract.connect(await signer);
-        
-        console.log('Deploying new batch contract...');
-        const tx = await factoryWithSigner.deployBatch(salt);
-        const receipt = await tx.wait();
-        
-        // Get deployed address from logs
-        const deployEvent = receipt.logs.find(log => 
-            log.topics[0] === ethers.id('BatchContractDeployed(address,address,uint256)')
-        );
-        const batchAddress = '0x' + deployEvent.topics[2].slice(26);
-        
-        console.log('Deployed new batch contract:', batchAddress);
-        return batchAddress;
+    const existingContract = await checkUserBatchContract();
+    if (existingContract) {
+        return existingContract;
     }
+    
+    // If no contract exists, user needs to deploy one manually
+    updateBatchStatus('⚠️ No batch contract found. Click "Deploy New Batch Contract" to create one!', 'info');
+    return null;
 }
 const BATCH_PROXY_ABI = [
   {
@@ -249,6 +324,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('optimizeGas').addEventListener('click', optimizeGasSettings);
   document.getElementById('toggleSelectAll').addEventListener('click', toggleSelectAll);
   document.getElementById('sortBtn').addEventListener('click', sortNFTs);
+  document.getElementById('deployBatchBtn').addEventListener('click', deployUserBatchContract);
+  document.getElementById('checkBatchBtn').addEventListener('click', checkUserBatchContract);
 });
 
 // Native token and gas optimization functions
@@ -394,6 +471,9 @@ async function connectWallet() {
 
       // Initialize gas optimization
       await optimizeGasSettings();
+      
+      // Check if user has a batch contract
+      await checkUserBatchContract();
     } catch (error) {
       console.error('Error connecting wallet:', error);
       updateStatus(`Error: ${error.message}`);
@@ -725,14 +805,26 @@ async function transferNFTs() {
     if (validTokenIds.length > 1) {
       let batchSuccess = false;
 
-      // Method 1: Use batch proxy if available (MOST EFFICIENT)
-      if (batchProxy && BATCH_PROXY_ADDRESS && BATCH_PROXY_ADDRESS !== '') {
+      // Method 1: Use user's personal batch contract if available (MOST EFFICIENT)
+      const userBatchAddress = await getUserBatchContract();
+      if (userBatchAddress) {
         try {
-          updateStatus(`Attempting transfer via batch proxy...`);
+          updateStatus(`Attempting transfer via your personal batch contract...`);
 
+          const userBatchContract = new web3.eth.Contract(BATCH_TRANSFER_ABI, userBatchAddress);
           const recipients = Array(validTokenIds.length).fill(recipient);
 
-          const estimatedGas = await batchProxy.methods.batchTransfer(
+          // Check if contract is approved for transfers
+          let needsApproval = false;
+          const isApprovedForAll = await contract.methods.isApprovedForAll(accounts[0], userBatchAddress).call();
+          
+          if (!isApprovedForAll) {
+            updateStatus('Approving batch contract to transfer your NFTs...');
+            const approvalTx = await contract.methods.setApprovalForAll(userBatchAddress, true).send({ from: accounts[0] });
+            updateStatus('Approval granted! Now transferring NFTs...');
+          }
+
+          const estimatedGas = await userBatchContract.methods.batchTransfer(
             CONTRACT_ADDRESS,
             recipients,
             validTokenIds
@@ -743,7 +835,7 @@ async function transferNFTs() {
             gas: Math.ceil(estimatedGas * 1.3) // Add 30% buffer for batch
           };
 
-          const tx = await batchProxy.methods.batchTransfer(
+          const tx = await userBatchContract.methods.batchTransfer(
             CONTRACT_ADDRESS,
             recipients,
             validTokenIds
@@ -755,17 +847,18 @@ async function transferNFTs() {
           validTokenIds.forEach(tokenId => {
             results.push({
               tokenId,
-              status: 'Batch Transferred via Proxy',
+              status: 'Batch Transferred via Personal Contract',
               txHash: tx.transactionHash,
               gasUsed: Math.floor(tx.gasUsed / validTokenIds.length)
             });
             selectedNFTs.delete(tokenId);
           });
 
-          updateStatus(`✅ Successfully batch transferred ${validTokenIds.length} NFTs via proxy in one transaction!`);
+          updateStatus(`✅ Successfully batch transferred ${validTokenIds.length} NFTs via your personal batch contract in one transaction!`);
           batchSuccess = true;
         } catch (error) {
-          console.log('Batch proxy transfer failed:', error.message);
+          console.log('Personal batch contract transfer failed:', error.message);
+          updateBatchStatus('❌ Batch transfer failed. Try deploying a new batch contract.', 'error');
         }
       }
 

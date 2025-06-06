@@ -2,23 +2,25 @@
 const { ethers } = require("hardhat");
 
 async function main() {
-  console.log("Deploying BatchNFTTransfer contract...");
+  console.log("Deploying BatchFactory contract...");
 
   // Get the contract factory
-  const BatchNFTTransfer = await ethers.getContractFactory("BatchNFTTransfer");
+  const BatchFactory = await ethers.getContractFactory("BatchFactory");
 
   // Deploy the contract
-  const batchTransfer = await BatchNFTTransfer.deploy();
-  await batchTransfer.waitForDeployment();
+  const batchFactory = await BatchFactory.deploy();
+  await batchFactory.waitForDeployment();
 
-  const contractAddress = await batchTransfer.getAddress();
+  const contractAddress = await batchFactory.getAddress();
   
-  console.log("BatchNFTTransfer deployed to:", contractAddress);
+  console.log("BatchFactory deployed to:", contractAddress);
   console.log("Explorer URL:", `https://explorer.arena-z.gg/address/${contractAddress}`);
   
   // Update the frontend with the new contract address
-  console.log("\nTo use this contract, update BATCH_PROXY_ADDRESS in public/script.js:");
-  console.log(`const BATCH_PROXY_ADDRESS = '${contractAddress}';`);
+  console.log("\nTo use this contract, update BATCH_FACTORY_ADDRESS in public/script.js:");
+  console.log(`const BATCH_FACTORY_ADDRESS = '${contractAddress}';`);
+  
+  console.log("\nUsers can now deploy their personal batch contracts through the BatchFactory!");
 }
 
 main()
