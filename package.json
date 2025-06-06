@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "compile": "hardhat compile",
     "deploy": "hardhat run scripts/deploy.js --network arena-z",
-    "compile": "hardhat compile"
+    "deploy-simple": "hardhat run scripts/deploySimpleBatch.js --network arena-z",
+    "start": "node server.js"
   },
   "dependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
