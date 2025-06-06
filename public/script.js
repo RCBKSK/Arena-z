@@ -5,7 +5,18 @@ const RPC_URL = 'https://rpc.arena-z.gg';
 const EXPLORER_URL = 'https://explorer.arena-z.gg';
 
 // Optional: Address of the batch transfer proxy contract
+// Deploy a batch proxy for MAXIMUM EFFICIENCY (single transaction for all NFTs)
+// Example proxy contract: https://github.com/your-proxy-contract
 const BATCH_PROXY_ADDRESS = ''; // Replace with your deployed proxy address
+
+/*
+ * BATCH TRANSFER METHOD PRIORITY:
+ * 1. Batch Proxy Contract (if deployed) - BEST: Single transaction for unlimited NFTs
+ * 2. safeBatchTransferFrom - GOOD: Native batch support if contract has it
+ * 3. ERC1155 batch - GOOD: For hybrid contracts
+ * 4. Multicall - OK: Multiple calls in one transaction
+ * 5. Individual transfers - FALLBACK: Separate transactions (requires multiple signatures)
+ */
 
 // Enhanced ERC721 ABI with additional functions
 const ERC721_ABI = [
@@ -343,34 +354,105 @@ async function loadUserNFTs() {
     }
 
     userNFTs = [];
+    updateStatus(`Found ${balanceNum} NFTs, loading details...`);
 
-    // Load token IDs
-    for (let i = 0; i < balanceNum; i++) {
-      try {
-        const tokenId = await contract.methods.tokenOfOwnerByIndex(accounts[0], i).call();
-        userNFTs.push({ tokenId, metadata: null });
-      } catch (error) {
-        console.warn(`Error getting token at index ${i}:`, error);
+    // Method 1: Try tokenOfOwnerByIndex (ERC721Enumerable)
+    let useEnumerable = true;
+    try {
+      await contract.methods.tokenOfOwnerByIndex(accounts[0], 0).call();
+    } catch (error) {
+      console.log("Contract doesn't support ERC721Enumerable, using alternative method");
+      useEnumerable = false;
+    }
+
+    if (useEnumerable) {
+      // Load token IDs using enumeration
+      for (let i = 0; i < balanceNum; i++) {
+        try {
+          const tokenId = await contract.methods.tokenOfOwnerByIndex(accounts[0], i).call();
+          userNFTs.push({ tokenId: tokenId.toString(), metadata: null });
+          updateStatus(`Loading NFT ${i + 1}/${balanceNum}...`);
+        } catch (error) {
+          console.warn(`Error getting token at index ${i}:`, error);
+        }
+      }
+    } else {
+      // Alternative method: Check common token ID ranges
+      // This is a fallback when enumeration isn't supported
+      updateStatus("Scanning for your NFTs (this may take a moment)...");
+      
+      const maxTokenId = 10000; // Adjust based on your collection size
+      const batchSize = 50;
+      
+      for (let start = 1; start <= maxTokenId; start += batchSize) {
+        const promises = [];
+        const end = Math.min(start + batchSize - 1, maxTokenId);
+        
+        for (let tokenId = start; tokenId <= end; tokenId++) {
+          promises.push(
+            contract.methods.ownerOf(tokenId).call()
+              .then(owner => ({ tokenId: tokenId.toString(), owner }))
+              .catch(() => null)
+          );
+        }
+        
+        const results = await Promise.all(promises);
+        results.forEach(result => {
+          if (result && result.owner.toLowerCase() === accounts[0].toLowerCase()) {
+            userNFTs.push({ tokenId: result.tokenId, metadata: null });
+          }
+        });
+        
+        updateStatus(`Scanned tokens ${start}-${end}, found ${userNFTs.length} NFTs...`);
+        
+        if (userNFTs.length >= balanceNum) break;
       }
     }
 
-    // Load metadata for each NFT
-    for (let nft of userNFTs) {
+    if (userNFTs.length === 0) {
+      updateStatus("No NFTs found. Make sure you're connected to the right wallet.");
+      document.getElementById('nftLoader').style.display = 'none';
+      return;
+    }
+
+    updateStatus(`Loading metadata for ${userNFTs.length} NFTs...`);
+
+    // Load metadata for each NFT with better error handling
+    const metadataPromises = userNFTs.map(async (nft, index) => {
       try {
         const tokenURI = await contract.methods.tokenURI(nft.tokenId).call();
         if (tokenURI) {
-          const response = await fetch(tokenURI);
-          const metadata = await response.json();
-          nft.metadata = metadata;
+          // Handle IPFS URLs
+          let metadataUrl = tokenURI;
+          if (tokenURI.startsWith('ipfs://')) {
+            metadataUrl = tokenURI.replace('ipfs://', 'https://ipfs.io/ipfs/');
+          }
+          
+          const response = await fetch(metadataUrl);
+          if (response.ok) {
+            const metadata = await response.json();
+            nft.metadata = metadata;
+            
+            // Handle IPFS image URLs
+            if (metadata.image && metadata.image.startsWith('ipfs://')) {
+              metadata.image = metadata.image.replace('ipfs://', 'https://ipfs.io/ipfs/');
+            }
+          }
+        }
+        
+        if ((index + 1) % 10 === 0) {
+          updateStatus(`Loaded metadata for ${index + 1}/${userNFTs.length} NFTs...`);
         }
       } catch (error) {
         console.warn(`Error loading metadata for token ${nft.tokenId}:`, error);
       }
-    }
+    });
+
+    await Promise.all(metadataPromises);
 
     displayNFTs();
     document.querySelector('.nft-controls').style.display = 'block';
-    updateStatus(`Loaded ${userNFTs.length} NFTs`);
+    updateStatus(`Successfully loaded ${userNFTs.length} NFTs`);
   } catch (error) {
     console.error("Error loading NFTs:", error);
     updateStatus(`Error loading NFTs: ${error.message}`);
@@ -547,8 +629,8 @@ async function transferNFTs() {
     if (validTokenIds.length > 1) {
       let batchSuccess = false;
 
-      // Use batch proxy if available
-      if (batchProxy) {
+      // Method 1: Use batch proxy if available (MOST EFFICIENT)
+      if (batchProxy && BATCH_PROXY_ADDRESS && BATCH_PROXY_ADDRESS !== '') {
         try {
           updateStatus(`Attempting transfer via batch proxy...`);
 
