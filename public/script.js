@@ -4,10 +4,11 @@ const CHAIN_ID = 7897;
 const RPC_URL = 'https://rpc.arena-z.gg';
 const EXPLORER_URL = 'https://explorer.arena-z.gg';
 
-// Optional: Address of the batch transfer proxy contract
-// Deploy a batch proxy for MAXIMUM EFFICIENCY (single transaction for all NFTs)
-// Example proxy contract: https://github.com/your-proxy-contract
-const BATCH_PROXY_ADDRESS = ''; // Replace with your deployed proxy address
+// BatchFactory contract address (deploy this once)
+const BATCH_FACTORY_ADDRESS = ''; // Replace with your deployed BatchFactory address
+
+// Cache for user's personal batch contract
+let userBatchContract = null;
 
 /*
  * BATCH TRANSFER METHOD PRIORITY:
@@ -111,7 +112,102 @@ const ERC721_ABI = [
   }
 ];
 
-// ABI for the batch transfer proxy contract (replace with actual ABI)
+// BatchFactory ABI
+const BATCH_FACTORY_ABI = [
+    {
+        "inputs": [{"internalType": "uint256", "name": "salt", "type": "uint256"}],
+        "name": "deployBatch",
+        "outputs": [{"internalType": "address", "name": "batchContract", "type": "address"}],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {"internalType": "address", "name": "deployer", "type": "address"},
+            {"internalType": "uint256", "name": "salt", "type": "uint256"}
+        ],
+        "name": "getBatchAddress",
+        "outputs": [{"internalType": "address", "name": "predicted", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {"internalType": "address", "name": "deployer", "type": "address"},
+            {"internalType": "uint256", "name": "salt", "type": "uint256"}
+        ],
+        "name": "batchExists",
+        "outputs": [{"internalType": "bool", "name": "exists", "type": "bool"}],
+        "stateMutability": "view",
+        "type": "function"
+    }
+];
+
+// BatchNFTTransfer ABI
+const BATCH_TRANSFER_ABI = [
+    {
+        "inputs": [
+            {"internalType": "address", "name": "nftContract", "type": "address"},
+            {"internalType": "address[]", "name": "recipients", "type": "address[]"},
+            {"internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]"}
+        ],
+        "name": "batchTransfer",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {"internalType": "address", "name": "nftContract", "type": "address"},
+            {"internalType": "address", "name": "recipient", "type": "address"},
+            {"internalType": "uint256[]", "name": "tokenIds", "type": "uint256[]"}
+        ],
+        "name": "batchTransferToSingle",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    }
+];
+
+// Function to get or deploy user's batch contract
+async function getUserBatchContract() {
+    if (!BATCH_FACTORY_ADDRESS) {
+        throw new Error('BatchFactory not deployed. Please deploy BatchFactory first.');
+    }
+    
+    const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+    const userAddress = accounts[0];
+    const salt = 1; // You can make this user-specific or random
+    
+    const factoryContract = new ethers.Contract(BATCH_FACTORY_ADDRESS, BATCH_FACTORY_ABI, provider);
+    
+    // Check if user already has a batch contract
+    const batchExists = await factoryContract.batchExists(userAddress, salt);
+    
+    if (batchExists) {
+        // Get existing contract address
+        const batchAddress = await factoryContract.getBatchAddress(userAddress, salt);
+        console.log('Using existing batch contract:', batchAddress);
+        return batchAddress;
+    } else {
+        // Deploy new batch contract
+        const signer = new ethers.BrowserProvider(window.ethereum).getSigner();
+        const factoryWithSigner = factoryContract.connect(await signer);
+        
+        console.log('Deploying new batch contract...');
+        const tx = await factoryWithSigner.deployBatch(salt);
+        const receipt = await tx.wait();
+        
+        // Get deployed address from logs
+        const deployEvent = receipt.logs.find(log => 
+            log.topics[0] === ethers.id('BatchContractDeployed(address,address,uint256)')
+        );
+        const batchAddress = '0x' + deployEvent.topics[2].slice(26);
+        
+        console.log('Deployed new batch contract:', batchAddress);
+        return batchAddress;
+    }
+}
 const BATCH_PROXY_ABI = [
   {
     "inputs": [
