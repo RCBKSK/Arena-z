@@ -380,14 +380,14 @@ async function loadUserNFTs() {
       // Alternative method: Check common token ID ranges
       // This is a fallback when enumeration isn't supported
       updateStatus("Scanning for your NFTs (this may take a moment)...");
-      
+
       const maxTokenId = 10000; // Adjust based on your collection size
       const batchSize = 50;
-      
+
       for (let start = 1; start <= maxTokenId; start += batchSize) {
         const promises = [];
         const end = Math.min(start + batchSize - 1, maxTokenId);
-        
+
         for (let tokenId = start; tokenId <= end; tokenId++) {
           promises.push(
             contract.methods.ownerOf(tokenId).call()
@@ -395,16 +395,16 @@ async function loadUserNFTs() {
               .catch(() => null)
           );
         }
-        
+
         const results = await Promise.all(promises);
         results.forEach(result => {
           if (result && result.owner.toLowerCase() === accounts[0].toLowerCase()) {
             userNFTs.push({ tokenId: result.tokenId, metadata: null });
           }
         });
-        
+
         updateStatus(`Scanned tokens ${start}-${end}, found ${userNFTs.length} NFTs...`);
-        
+
         if (userNFTs.length >= balanceNum) break;
       }
     }
@@ -427,19 +427,19 @@ async function loadUserNFTs() {
           if (tokenURI.startsWith('ipfs://')) {
             metadataUrl = tokenURI.replace('ipfs://', 'https://ipfs.io/ipfs/');
           }
-          
+
           const response = await fetch(metadataUrl);
           if (response.ok) {
             const metadata = await response.json();
             nft.metadata = metadata;
-            
+
             // Handle IPFS image URLs
             if (metadata.image && metadata.image.startsWith('ipfs://')) {
               metadata.image = metadata.image.replace('ipfs://', 'https://ipfs.io/ipfs/');
             }
           }
         }
-        
+
         if ((index + 1) % 10 === 0) {
           updateStatus(`Loaded metadata for ${index + 1}/${userNFTs.length} NFTs...`);
         }
@@ -931,8 +931,7 @@ function displayResults(results) {
       <td>${result.status}</td>
       <td>${result.gasUsed || '-'}</td>
       <td>${
-        result.txHash ? 
-          `<a href="${EXPLORER_URL}/tx/${result.txHash}" target="_blank">View TX</a>` : 
+        result.txHash ?`<a href="${EXPLORER_URL}/tx/${result.txHash}" target="_blank">View TX</a>` : 
           result.message || ''
       }</td>
     `;
