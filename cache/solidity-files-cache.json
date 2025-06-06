@@ -36,6 +36,43 @@
         "BatchNFTTransfer",
         "IERC721"
       ]
+    },
+    "/home/runner/workspace/contracts/BatchFactory.sol": {
+      "lastModificationDate": 1749232138746,
+      "contentHash": "cdaa54e28ecce8b8e26cbebb4738cd56",
+      "sourceName": "contracts/BatchFactory.sol",
+      "solcConfig": {
+        "version": "0.8.19",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./BatchProxy.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.0"
+      ],
+      "artifacts": [
+        "BatchFactory"
+      ]
     }
   }
 }
