@@ -73,6 +73,42 @@
       "artifacts": [
         "BatchFactory"
       ]
+    },
+    "/home/runner/workspace/contracts/SimpleBatchDeploy.sol": {
+      "lastModificationDate": 1749279188844,
+      "contentHash": "a9ef4611d82f8af310b63a2b77d097c9",
+      "sourceName": "contracts/SimpleBatchDeploy.sol",
+      "solcConfig": {
+        "version": "0.8.19",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.0"
+      ],
+      "artifacts": [
+        "IERC721",
+        "SimpleBatchTransfer"
+      ]
     }
   }
 }
