@@ -4,8 +4,8 @@ const CHAIN_ID = 7897;
 const RPC_URL = 'https://rpc.arena-z.gg';
 const EXPLORER_URL = 'https://explorer.arena-z.gg';
 
-// BatchFactory contract address (deploy this once)
-const BATCH_FACTORY_ADDRESS = '0x0000000000000000000000000000000000000000'; // Replace with your deployed BatchFactory address
+// Each user deploys their own BatchFactory instance
+let USER_BATCH_FACTORY_ADDRESS = null; // Will be set after user deploys their factory
 
 // Cache for user's personal batch contract
 let userBatchContract = null;
@@ -186,7 +186,7 @@ const SIMPLE_BATCH_ABI = [
 
 // Function to check if user has a batch contract
 async function checkUserBatchContract() {
-    if (!BATCH_FACTORY_ADDRESS || BATCH_FACTORY_ADDRESS === '0x0000000000000000000000000000000000000000') {
+    if (!USER_BATCH_FACTORY_ADDRESS) {
         updateBatchStatus('BatchFactory not deployed yet. Deploy BatchFactory first.', 'error');
         return null;
     }
@@ -200,7 +200,7 @@ async function checkUserBatchContract() {
         const userAddress = accounts[0];
         const salt = 1; // User-specific salt
 
-        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_ABI, BATCH_FACTORY_ADDRESS);
+        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_ABI, USER_BATCH_FACTORY_ADDRESS);
 
         // Check if user already has a batch contract
         const batchExists = await factoryContract.methods.batchExists(userAddress, salt).call();
@@ -224,7 +224,7 @@ async function checkUserBatchContract() {
 
 // Function to deploy user's batch contract
 async function deployUserBatchContract() {
-    if (!BATCH_FACTORY_ADDRESS || BATCH_FACTORY_ADDRESS === '0x0000000000000000000000000000000000000000') {
+    if (!USER_BATCH_FACTORY_ADDRESS) {
         updateBatchStatus('BatchFactory not deployed yet. Deploy BatchFactory first.', 'error');
         return;
     }
@@ -241,7 +241,7 @@ async function deployUserBatchContract() {
         const userAddress = accounts[0];
         const salt = 1; // User-specific salt
 
-        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_ABI, BATCH_FACTORY_ADDRESS);
+        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_ABI, USER_BATCH_FACTORY_ADDRESS);
 
         // Check if user already has a batch contract
         const batchExists = await factoryContract.methods.batchExists(userAddress, salt).call();
@@ -893,7 +893,7 @@ async function transferNFTs() {
               validTokenIds,
               validTokenIds.map(() => 1), // quantities (1 for each NFT)
               data
-            ).estimateGas({ from: accounts[0] });
+                        ).estimateGas({ from: accounts[0] });
 
             const gasSettings = {
               gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
@@ -1146,3 +1146,68 @@ function displayResults(results) {
     resultsDiv.innerHTML += `<p>Total gas used: ${totalGas}</p>`;
   }
 }
+
+// Function to deploy the BatchFactory contract for the user
+async function deployBatchFactory() {
+    if (!web3) {
+        updateStatus('Please connect wallet first', 'error');
+        return;
+    }
+
+    try {
+        updateStatus('Deploying BatchFactory contract...', 'info');
+        document.getElementById('deployBatchFactoryBtn').disabled = true;
+
+        const userAddress = accounts[0];
+
+        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_ABI);
+
+        const deploy = factoryContract.deploy({
+            data: BatchFactoryArtifact.bytecode,
+        });
+
+        const gasEstimate = await deploy.estimateGas({ from: userAddress });
+
+        const newContractInstance = await deploy.send({
+            from: userAddress,
+            gas: Math.ceil(gasEstimate * 1.2),
+        });
+
+        const deployedAddress = newContractInstance.options.address;
+        USER_BATCH_FACTORY_ADDRESS = deployedAddress;
+        localStorage.setItem('USER_BATCH_FACTORY_ADDRESS', deployedAddress);
+
+        updateStatus(`✅ Successfully deployed BatchFactory contract: ${deployedAddress}`, 'success');
+        console.log('Deployed BatchFactory contract:', deployedAddress);
+
+    } catch (error) {
+        console.error('Error deploying BatchFactory contract:', error);
+        updateStatus(`Error deploying BatchFactory contract: ${error.message}`, 'error');
+    } finally {
+        document.getElementById('deployBatchFactoryBtn').disabled = false;
+    }
+}
+
+// Initialize function to check if the user already has a BatchFactory deployed
+async function initialize() {
+    if (window.ethereum) {
+        try {
+            // Check if the user has already deployed a BatchFactory contract
+            const storedAddress = localStorage.getItem('USER_BATCH_FACTORY_ADDRESS');
+            if (storedAddress) {
+                USER_BATCH_FACTORY_ADDRESS = storedAddress;
+                console.log('BatchFactory address found in local storage:', storedAddress);
+                updateStatus(`BatchFactory address found in local storage: ${storedAddress}`, 'success');
+            }
+
+        } catch (error) {
+            console.error('Error initializing BatchFactory:', error);
+            updateStatus(`Error initializing BatchFactory: ${error.message}`, 'error');
+        }
+    }
+}
+
+// Call initialize when the page loads
+window.addEventListener('load', async () => {
+    await initialize();
+});
