@@ -16,10 +16,20 @@ async function main() {
   console.log("BatchFactory deployed to:", contractAddress);
   console.log("Explorer URL:", `https://explorer.arena-z.gg/address/${contractAddress}`);
   
-  // Update the frontend with the new contract address
-  console.log("\nTo use this contract, update BATCH_FACTORY_ADDRESS in public/script.js:");
-  console.log(`const BATCH_FACTORY_ADDRESS = '${contractAddress}';`);
+  // Get the contract artifacts
+  const fs = require('fs');
+  const batchFactoryArtifact = require('../artifacts/contracts/BatchFactory.sol/BatchFactory.json');
   
+  // Write the ABI and bytecode to a file that the frontend can use
+  const contractData = {
+    address: contractAddress,
+    abi: batchFactoryArtifact.abi,
+    bytecode: batchFactoryArtifact.bytecode
+  };
+  
+  fs.writeFileSync('./public/BatchFactory.json', JSON.stringify(contractData, null, 2));
+  
+  console.log("\n✅ Contract artifacts saved to public/BatchFactory.json");
   console.log("\nUsers can now deploy their personal batch contracts through the BatchFactory!");
 }
 

@@ -209,7 +209,7 @@ async function checkUserBatchContract() {
             return null;
         }
 
-        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_ABI, USER_BATCH_FACTORY_ADDRESS);
+        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_CONTRACT_DATA.abi, USER_BATCH_FACTORY_ADDRESS);
 
         // Test the contract by making a simple call first
         try {
@@ -227,7 +227,7 @@ async function checkUserBatchContract() {
         if (batchExists) {
             // Get existing contract address
             const batchAddress = await factoryContract.methods.getBatchAddress(userAddress, salt).call();
-            
+
             // Validate that the batch contract actually exists
             const batchCode = await web3.eth.getCode(batchAddress);
             if (batchCode === '0x' || batchCode === '0x0') {
@@ -251,7 +251,7 @@ async function checkUserBatchContract() {
     } catch (error) {
         console.error('Error checking batch contract:', error);
         updateBatchStatus(`Error checking batch contract: ${error.message}`, 'error');
-        
+
         // If there's a contract interaction error, clear the stored address
         if (error.message.includes('Returned values aren\'t valid') || 
             error.message.includes('revert') || 
@@ -260,7 +260,7 @@ async function checkUserBatchContract() {
             USER_BATCH_FACTORY_ADDRESS = null;
             updateBatchStatus('❌ Invalid BatchFactory contract. Please deploy a new one.', 'error');
         }
-        
+
         return null;
     }
 }
@@ -293,14 +293,14 @@ async function deployUserBatchContract() {
             return;
         }
 
-        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_ABI, USER_BATCH_FACTORY_ADDRESS);
+        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_CONTRACT_DATA.abi, USER_BATCH_FACTORY_ADDRESS);
 
         // Check if user already has a batch contract
         const batchExists = await factoryContract.methods.batchExists(userAddress, salt).call();
 
         if (batchExists) {
             const batchAddress = await factoryContract.methods.getBatchAddress(userAddress, salt).call();
-            
+
             // Verify the batch contract actually exists
             const batchCode = await web3.eth.getCode(batchAddress);
             if (batchCode !== '0x' && batchCode !== '0x0') {
@@ -320,7 +320,7 @@ async function deployUserBatchContract() {
 
         // Get deployed address
         const batchAddress = await factoryContract.methods.getBatchAddress(userAddress, salt).call();
-        
+
         // Verify deployment was successful
         const deployedCode = await web3.eth.getCode(batchAddress);
         if (deployedCode === '0x' || deployedCode === '0x0') {
@@ -338,7 +338,7 @@ async function deployUserBatchContract() {
     } catch (error) {
         console.error('Error deploying batch contract:', error);
         updateBatchStatus(`Error deploying batch contract: ${error.message}`, 'error');
-        
+
         // Clear invalid factory address if deployment fails due to contract issues
         if (error.message.includes('Returned values aren\'t valid') || 
             error.message.includes('revert') || 
@@ -880,8 +880,7 @@ async function transferNFTs() {
     // Check if contract supports batch transfer
     let supportsBatch = false;
     try {
-      await contract.methods.safeBatchTransferFrom(accounts[0], recipient, []).estimateGas({ from: accounts[0] });
-      supportsBatch = true;
+      await contract.methods.safeBatchTransferFrom(accounts[0], recipient, []).estimateGas({ from: accounts[0] });      supportsBatch = true;
     } catch (error) {
       console.log('Contract does not support batch transfer, using individual transfers');
     }
@@ -1223,7 +1222,7 @@ function displayResults(results) {
 }
 
 // BatchFactory bytecode (from compiled contract)
-const BATCH_FACTORY_BYTECODE = "0x608060405234801561001057600080fd5b506108e9806100206000396000f3fe608060405234801561001057600080fd5b50600436106100415760003560e01c80630e6650fc146100465780634e335f761461007a578063f85242ca146100b0575b600080fd5b61005961005436600461054e565b6100d0565b60405173ffffffffffffffffffffffffffffffffffffffff90911681526020015b60405180910390f35b61005961008836600461056f565b73ffffffffffffffffffffffffffffffffffffffff82166000908152602081905260409020546100d0906101f9565b60405190151581526020016100719056fe608060405234801561001057600080fd5b506104c8806100206000396000f3fe608060405234801561001057600080fd5b50600436106100365760003560e01c80631239ec8c1461003b5780635504230414610050575b600080fd5b61004e610049366004610360565b610063565b005b61004e61005e366004610409565b6101a3565b8051825114610079576040516306b5667560e21b815260040160405180910390fd5b60008251116100955760405163040739bf60e11b815260040160405180910390fd5b6040516370a0823160e01b815233600482015260009073ffffffffffffffffffffffffffffffffffffffff8516906370a0823190602401602060405180830381865afa1580156100e9573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061010d919061044b565b905060005b835181101561019c57610128338585848151811061013257610132610464565b6020026020010151610258565b73ffffffffffffffffffffffffffffffffffffffff8516639dc29fac33868585815181106101625761016261041c565b602002602001015160405160e085901b7fffffffffffff00000000000000000000000000000000000000000000000000001681526004016101a39291906104a5565b005b61019c73ffffffffffffffffffffffffffffffffffffffff8516639dc29fac33866101e957610164610464565b602002602001015160405160e085901b7fffffffffffff00000000000000000000000000000000000000000000000000001681526004016101e99291906104c6565b6000600101610112565b5050505050565b600082511161019c5760405163040739bf60e11b815260040160405180910390fd5b73ffffffffffffffffffffffffffffffffffffffff8316610201576040516399a2fd3b60e01b815260040160405180910390fd5b60405160609073ffffffffffffffffffffffffffffffffffffffff841690633b2c3fb560e11b908490610236908690600401610509565b6000604051808303816000875af1925050508015610271576040513d6000823e3d6000fd5b505050506040513d6000823e3d6000fd5b60005b825181101561019c5761029b338484848151811061010857610105610464565b505061019c610112565b60006102c0338484815181106102b7576102b7610464565b60200260200101516102b8565b7f165261ec30100000000000000000000000000000000000000000000000000000";
+const BATCH_FACTORY_BYTECODE = "0x608060405234801561001057600080fd5b506108e9806100206000396000f3fe608060405234801561001057600080fd5b50600436106100415760003560e01c80630e6650fc146100465780634e335f761461007a578063f85242ca146100b0575b600080fd5b61005961005436600461054e565b6100d0565b60405173ffffffffffffffffffffffffffffffffffffffff90911681526020015b60405180910390f35b61005961008836600461056f565b73ffffffffffffffffffffffffffffffffffffffff82166000908152602081905260409020546100d0906101f9565b60405190151581526020016100719056fe608060405234801561001057600080fd5b506104c8806100206000396000f3fe608060405234801561001057600080fd5b50600436106100365760003560e01c80631239ec8c1461003b5780635504230414610050575b600080fd5b61004e610049366004610360565b610063565b005b61004e61005e366004610409565b6101a3565b8051825114610079576040516306b5667560e21b815260040160405180910390fd5b60008251116100955760405163040739bf60e11b815260040160405180910390fd5b6040516370a0823160e01b815233600482015260009073ffffffffffffffffffffffffffffffffffffffff8516906370a0823190602401602060405180830381865afa1580156100e9573d6000803e3d6000fd5b50505050506040513d601f19601f8201168201806040525081019061010d919061044b565b905060005b835181101561019c57610128338585848151811061013257610132610464565b6020026020010151610258565b73ffffffffffffffffffffffffffffffffffffffff8516639dc29fac33868585815181106101625761016261041c565b602002602001015160405160e085901b7fffffffffffff00000000000000000000000000000000000000000000000000001681526004016101a39291906104a5565b005b61019c73ffffffffffffffffffffffffffffffffffffffff8516639dc29fac33866101e957610164610464565b602002602001015160405160e085901b7fffffffffffff00000000000000000000000000000000000000000000000000001681526004016101e99291906104c6565b6000600101610112565b5050505050565b600082511161019c5760405163040739bf60e11b815260040160405180910390fd5b73ffffffffffffffffffffffffffffffffffffffff8316610201576040516399a2fd3b60e01b815260040160405180910390fd5b60405160609073ffffffffffffffffffffffffffffffffffffffff841690633b2c3fb560e11b908490610236908690600401610509565b6000604051808303816000875af1925050508015610271576040513d6000823e3d6000fd5b505050506040513d6000823e3d6000fd5b60005b825181101561019c5761029b338484848151811061010857610105610464565b505061019c610112565b60006102c0338484815181106102b7576102b7610464565b60200260200101516102b8565b7f165261ec30100000000000000000000000000000000000000000000000000000";
 
 // Function to deploy the BatchFactory contract for the user
 async function deployBatchFactory() {
@@ -1239,7 +1238,7 @@ async function deployBatchFactory() {
         const userAddress = accounts[0];
 
         // Create contract instance for deployment
-        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_ABI);
+        const factoryContract = new web3.eth.Contract(BATCH_FACTORY_CONTRACT_DATA.abi);
 
         // Deploy the contract
         const deploy = factoryContract.deploy({
