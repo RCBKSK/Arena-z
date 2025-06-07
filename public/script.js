@@ -210,9 +210,13 @@ async function checkUserBatchContract() {
             const batchAddress = await factoryContract.methods.getBatchAddress(userAddress, salt).call();
             userBatchContract = batchAddress;
             updateBatchStatus(`✅ Your batch contract: ${batchAddress}`, 'success');
+            document.getElementById('deployBatchBtn').disabled = true;
+            document.getElementById('checkBatchBtn').disabled = false;
             return batchAddress;
         } else {
             updateBatchStatus('❌ No batch contract found. Deploy one to enable efficient batch transfers!', 'info');
+            document.getElementById('deployBatchBtn').disabled = false;
+            document.getElementById('checkBatchBtn').disabled = false;
             return null;
         }
     } catch (error) {
@@ -339,6 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('optimizeGas').addEventListener('click', optimizeGasSettings);
   document.getElementById('toggleSelectAll').addEventListener('click', toggleSelectAll);
   document.getElementById('sortBtn').addEventListener('click', sortNFTs);
+  document.getElementById('deployBatchFactoryBtn').addEventListener('click', deployBatchFactory);
   document.getElementById('deployBatchBtn').addEventListener('click', deployUserBatchContract);
   document.getElementById('checkBatchBtn').addEventListener('click', checkUserBatchContract);
 });
@@ -479,6 +484,7 @@ async function connectWallet() {
       document.getElementById('transferBtn').disabled = false;
       document.getElementById('optimizeGas').disabled = false;
       document.getElementById('loadNFTs').disabled = false;
+      document.getElementById('deployBatchFactoryBtn').disabled = false;
       updateStatus('Wallet connected successfully');
 
       // Initialize gas optimization
@@ -1144,27 +1150,34 @@ function displayResults(results) {
   }
 }
 
+// BatchFactory bytecode (from compiled contract)
+const BATCH_FACTORY_BYTECODE = "0x608060405234801561001057600080fd5b50610c22806100206000396000f3fe608060405234801561001057600080fd5b50600436106100415760003560e01c80630e6650fc146100465780634e335f761461007a578063f85242ca146100b0575b600080fd5b61005961005436600461054e565b6100d0565b60405173ffffffffffffffffffffffffffffffffffffffff90911681526020015b60405180910390f35b61005961008836600461056f565b73ffffffffffffffffffffffffffffffffffffffff919091166000908152602081905260409020805460ff19166001179055565b6100c36100be36600461056f565b6101c5565b6040516100719190610591565b600080336100dd846101f9565b6040516100e9906102d5565b6100f39190610606565b604051809103906000f08015801561010f573d6000803e3d6000fd5b5090508073ffffffffffffffffffffffffffffffffffffffff16610132336101f9565b7fd38ef0a0253bec7c698626802290d8944456ca156233dbd71a8421f4270849d660405160405180910390a392915050565b73ffffffffffffffffffffffffffffffffffffffff166000908152602081905260409020805460ff1916600117905550565b60405180910390f35b73ffffffffffffffffffffffffffffffffffffffff82166000908152602081905260409020546101c1906101f9565b565b73ffffffffffffffffffffffffffffffffffffffff82166000908152602081905260409020546101c1906101f9565b6000816040516020016102139190610591565b604080517fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe08184030181529190528051602090910120905060006102566102e2565b90506000816040516020016102739190610591565b604080517fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe081840301815291905280516020909101209050600061ffff84168360405180910390fd5b90506040518060400160405280600881526020017f4261746368466163746f727900000000000000000000000000000000000000008152506040516020016102d39190610606565b604051602081830303815290604052805190602001209050600061ffff841683604051809103906000f5905080156102d557600080fd5b6102d5903d90602001810190610336565b90506040518060400160405280600881526020017f4261746368466163746f727900000000000000000000000000000000000000008152506040516020016102d39190610606565b604051602081830303815290604052805190602001209050600061ffff841683604051809103906000f5905080156102d557600080fd5b5050565b61036081610336565b810190811067ffffffffffffffff8211171561037e5761037e61062a565b604052919050565b600067ffffffffffffffff8211156103a0576103a061062a565b5060051b60200190565b600082601f8301126103bb57600080fd5b813560206103d06103cb83610386565b610350565b82815260059290921b840181019181810190868411156103ef57600080fd5b8286015b8481101561040a57803583529183019183016103f3565b509695505050505050565b6000806040838503121561042857600080fd5b823567ffffffffffffffff8082111561044057600080fd5b818501915085601f83011261045457600080fd5b813560206104646103cb83610386565b82815260059290921b8401810191818101908984111561048357600080fd5b948201945b838610156104aa57853585529482019490820190610488565b965050860135925050808211156104c057600080fd5b506104cd858286016103aa565b9150509250929050565b600080604083850312156104ea57600080fd5b50508035926020909101359150565b600060208284031215610512565b5090565b80356001600160a01b038116811461051257600080fd5b634e487b7160e01b600052604160045260246000fd5b60006020828403121561054e57600080fd5b5035919050565b6000806040838503121561056f57600080fd5b61057883610506565b946020939093013593505050565b8015158114610594577f4e487b7100000000000000000000000000000000000000000000000000000000600052602160045260246000fd5b50565b600082825180855260208086019550808260051b84010186860187805b848110156105f857601f19868403018952815180518452858101518686015260408101516040860152606081015160608601526080810151608086015260a081015160a0860152838101518387015250607f19601f8201168501019450602093840193600192909201910191506105b7565b50909998505050505050505050565b60008251610619818460208701610659565b9190910192915050565b8181038181111561051257634e487b7160e01b600052601160045260246000fd5b60005b8381101561067457818101518382015260200161065c565b50506000910152565b600061069461069f8380610659565b602081840381018352845180835260408501915060408160051b86010192508387016000805b84811015610743577fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff808a88030185528551805189528881015190890152870151878801526060870151606088015260808701516080880152908501516106e49060a08a01906106a7565b601f19601f8501168801019750602095860195600193909301929092016106ba565b509198975050505050505050565b604051601f8201601f1916810167ffffffffffffffff8111828210171561077a5761077a61062a565b604052919050565b600067ffffffffffffffff82111561079c5761079c61062a565b50601f01601f191660200190565b6000826107c757634e487b7160e01b600052601260045260246000fd5b500490565b6000602082840312156107de57600080fd5b813567ffffffffffffffff8111156107f557600080fd5b8201601f8101841361080657600080fd5b803561081461069f82610782565b81815285602083850101111561082957600080fd5b81602084016020830137600091810160200191909152949350505050";
+
 // Function to deploy the BatchFactory contract for the user
 async function deployBatchFactory() {
     if (!web3) {
-        updateStatus('Please connect wallet first', 'error');
+        updateBatchStatus('Please connect wallet first', 'error');
         return;
     }
 
     try {
-        updateStatus('Deploying BatchFactory contract...', 'info');
+        updateBatchStatus('Deploying BatchFactory contract...', 'info');
         document.getElementById('deployBatchFactoryBtn').disabled = true;
 
         const userAddress = accounts[0];
 
+        // Create contract instance for deployment
         const factoryContract = new web3.eth.Contract(BATCH_FACTORY_ABI);
 
+        // Deploy the contract
         const deploy = factoryContract.deploy({
-            data: BatchFactoryArtifact.bytecode,
+            data: BATCH_FACTORY_BYTECODE,
         });
 
+        // Estimate gas
         const gasEstimate = await deploy.estimateGas({ from: userAddress });
 
+        // Deploy with MetaMask
         const newContractInstance = await deploy.send({
             from: userAddress,
             gas: Math.ceil(gasEstimate * 1.2),
@@ -1174,12 +1187,15 @@ async function deployBatchFactory() {
         USER_BATCH_FACTORY_ADDRESS = deployedAddress;
         localStorage.setItem('USER_BATCH_FACTORY_ADDRESS', deployedAddress);
 
-        updateStatus(`✅ Successfully deployed BatchFactory contract: ${deployedAddress}`, 'success');
+        updateBatchStatus(`✅ Successfully deployed BatchFactory contract: ${deployedAddress}`, 'success');
         console.log('Deployed BatchFactory contract:', deployedAddress);
+
+        // Now check for existing batch contracts
+        await checkUserBatchContract();
 
     } catch (error) {
         console.error('Error deploying BatchFactory contract:', error);
-        updateStatus(`Error deploying BatchFactory contract: ${error.message}`, 'error');
+        updateBatchStatus(`Error deploying BatchFactory contract: ${error.message}`, 'error');
     } finally {
         document.getElementById('deployBatchFactoryBtn').disabled = false;
     }
