@@ -893,11 +893,10 @@ async function transferNFTs() {
             const estimatedGas = await erc1155Method(
               accounts[0],
               recipient,
-              ```text
-validTokenIds,
+              validTokenIds,
               validTokenIds.map(() => 1), // quantities (1 for each NFT)
               data
-                        ).estimateGas({ from: accounts[0] });
+            ).estimateGas({ from: accounts[0] });
 
             const gasSettings = {
               gasPrice: web3.utils.toWei(gasInfo.suggestedPrice.toString(), 'gwei'),
