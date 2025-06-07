@@ -473,10 +473,7 @@ async function connectWallet() {
       web3 = new Web3(window.ethereum);
       contract = new web3.eth.Contract(ERC721_ABI, CONTRACT_ADDRESS);
 
-      // Initialize batch proxy if address is set
-      if (BATCH_PROXY_ADDRESS && BATCH_PROXY_ADDRESS !== '0x0000000000000000000000000000000000000000') {
-        batchProxy = new web3.eth.Contract(BATCH_PROXY_ABI, BATCH_PROXY_ADDRESS);
-      }
+      // Note: Batch proxy will be created when user deploys their personal batch contract
 
       document.getElementById('walletAddress').textContent = accounts[0];
       document.getElementById('transferBtn').disabled = false;
