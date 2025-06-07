@@ -893,7 +893,8 @@ async function transferNFTs() {
             const estimatedGas = await erc1155Method(
               accounts[0],
               recipient,
-              validTokenIds,
+              ```text
+validTokenIds,
               validTokenIds.map(() => 1), // quantities (1 for each NFT)
               data
                         ).estimateGas({ from: accounts[0] });
