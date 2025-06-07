@@ -13,7 +13,7 @@ async function main() {
     
     // Prepare contract data for frontend
     const contractData = {
-      abi: BatchFactory.interface.format("json"),
+      abi: JSON.parse(BatchFactory.interface.formatJson()),
       bytecode: BatchFactory.bytecode,
       note: "Each user deploys their own BatchFactory instance"
     };

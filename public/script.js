@@ -116,6 +116,26 @@ const ERC721_ABI = [
 let BATCH_FACTORY_CONTRACT_DATA = {
     abi: [
         {
+            "anonymous": false,
+            "inputs": [
+                {"indexed": true, "internalType": "address", "name": "deployer", "type": "address"},
+                {"indexed": false, "internalType": "address", "name": "batchContract", "type": "address"},
+                {"indexed": false, "internalType": "uint256", "name": "salt", "type": "uint256"}
+            ],
+            "name": "BatchContractDeployed",
+            "type": "event"
+        },
+        {
+            "inputs": [
+                {"internalType": "address", "name": "deployer", "type": "address"},
+                {"internalType": "uint256", "name": "salt", "type": "uint256"}
+            ],
+            "name": "batchExists",
+            "outputs": [{"internalType": "bool", "name": "exists", "type": "bool"}],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
             "inputs": [{"internalType": "uint256", "name": "salt", "type": "uint256"}],
             "name": "deployBatch",
             "outputs": [{"internalType": "address", "name": "batchContract", "type": "address"}],
@@ -129,16 +149,6 @@ let BATCH_FACTORY_CONTRACT_DATA = {
             ],
             "name": "getBatchAddress",
             "outputs": [{"internalType": "address", "name": "predicted", "type": "address"}],
-            "stateMutability": "view",
-            "type": "function"
-        },
-        {
-            "inputs": [
-                {"internalType": "address", "name": "deployer", "type": "address"},
-                {"internalType": "uint256", "name": "salt", "type": "uint256"}
-            ],
-            "name": "batchExists",
-            "outputs": [{"internalType": "bool", "name": "exists", "type": "bool"}],
             "stateMutability": "view",
             "type": "function"
         }
