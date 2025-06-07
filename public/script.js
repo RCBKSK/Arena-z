@@ -1287,6 +1287,22 @@ async function deployBatchFactory() {
 
         const userAddress = accounts[0];
         
+        // Verify MetaMask is still connected and accessible
+        if (!window.ethereum) {
+            throw new Error('MetaMask not available. Please install or enable MetaMask.');
+        }
+        
+        if (!window.ethereum.isConnected()) {
+            throw new Error('MetaMask not connected. Please reconnect your wallet.');
+        }
+        
+        // Test if we can make a simple call to MetaMask
+        try {
+            await window.ethereum.request({ method: 'eth_accounts' });
+        } catch (testError) {
+            throw new Error(`MetaMask communication failed: ${testError.message}`);
+        }
+        
         // Check if we have the correct network
         const chainId = await web3.eth.getChainId();
         if (chainId !== CHAIN_ID) {
@@ -1325,8 +1341,16 @@ async function deployBatchFactory() {
             data: bytecode,
         });
 
-        // Estimate gas
-        const gasEstimate = await deploy.estimateGas({ from: userAddress });
+        // Test gas estimation first to catch errors early
+        console.log('Testing gas estimation...');
+        let gasEstimate;
+        try {
+            gasEstimate = await deploy.estimateGas({ from: userAddress });
+            console.log('Gas estimation successful:', gasEstimate);
+        } catch (gasError) {
+            console.error('Gas estimation failed:', gasError);
+            throw new Error(`Gas estimation failed: ${gasError.message}. This usually means there's an issue with the contract code or network.`);
+        }
 
         // Deploy with MetaMask
         const newContractInstance = await deploy.send({
@@ -1350,31 +1374,58 @@ async function deployBatchFactory() {
 
     } catch (error) {
         console.error('Error deploying BatchFactory contract:', error);
-        console.error('Error details:', {
-            message: error.message,
-            code: error.code,
-            data: error.data,
-            stack: error.stack
-        });
+        console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+        console.error('Error type:', typeof error);
+        console.error('Error constructor:', error.constructor.name);
+        
+        // Try to extract error details from different possible locations
+        const errorDetails = {
+            message: error.message || error.reason || 'No message',
+            code: error.code || 'No code',
+            data: error.data || 'No data',
+            stack: error.stack || 'No stack trace',
+            name: error.name || 'Unknown error type'
+        };
+        
+        console.error('Extracted error details:', errorDetails);
         
         let errorMessage = 'Unknown deployment error';
         
-        if (error.code === 4001) {
+        // Check if MetaMask is properly connected
+        if (!window.ethereum) {
+            errorMessage = 'MetaMask not detected. Please install MetaMask.';
+        } else if (!web3) {
+            errorMessage = 'Web3 not initialized. Please reconnect wallet.';
+        } else if (!accounts || accounts.length === 0) {
+            errorMessage = 'No wallet accounts found. Please connect wallet.';
+        } else if (error.code === 4001) {
             errorMessage = 'Transaction rejected by user';
+        } else if (error.code === -32603) {
+            errorMessage = 'Internal JSON-RPC error. Check network connection.';
+        } else if (error.code === -32602) {
+            errorMessage = 'Invalid parameters sent to MetaMask';
         } else if (error.message) {
             if (error.message.includes('insufficient funds')) {
                 errorMessage = 'Insufficient funds for gas';
+            } else if (error.message.includes('gas required exceeds allowance')) {
+                errorMessage = 'Gas limit too low. Try increasing gas limit.';
             } else if (error.message.includes('gas')) {
                 errorMessage = 'Gas estimation failed - check network connection';
             } else if (error.message.includes('revert')) {
                 errorMessage = `Contract reverted: ${error.message}`;
             } else if (error.message.includes('network')) {
                 errorMessage = `Network error: ${error.message}`;
+            } else if (error.message.includes('user denied')) {
+                errorMessage = 'Transaction denied by user';
+            } else if (error.message.includes('MetaMask')) {
+                errorMessage = `MetaMask error: ${error.message}`;
             } else {
                 errorMessage = error.message;
             }
         } else if (error.data && error.data.message) {
             errorMessage = error.data.message;
+        } else if (error.reason) {
+            errorMessage = error.reason;
         }
         
         updateBatchStatus(`❌ Error deploying BatchFactory: ${errorMessage}`, 'error');
