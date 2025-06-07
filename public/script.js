@@ -1286,12 +1286,39 @@ async function deployBatchFactory() {
         document.getElementById('deployBatchFactoryBtn').disabled = true;
 
         const userAddress = accounts[0];
+        
+        // Check if we have the correct network
+        const chainId = await web3.eth.getChainId();
+        if (chainId !== CHAIN_ID) {
+            throw new Error(`Wrong network. Expected Chain ID ${CHAIN_ID}, got ${chainId}`);
+        }
+        
+        // Check if user has enough balance for deployment
+        const balance = await web3.eth.getBalance(userAddress);
+        const balanceEth = web3.utils.fromWei(balance, 'ether');
+        console.log(`User balance: ${balanceEth} ETH`);
+        
+        if (parseFloat(balanceEth) < 0.001) {
+            throw new Error(`Insufficient balance for deployment. You have ${balanceEth} ETH, need at least 0.001 ETH`);
+        }
+
+        // Validate contract data
+        if (!BATCH_FACTORY_CONTRACT_DATA.abi || !Array.isArray(BATCH_FACTORY_CONTRACT_DATA.abi)) {
+            throw new Error('BatchFactory ABI not properly loaded');
+        }
+        
+        // Use bytecode from loaded data or fallback to hardcoded
+        const bytecode = BATCH_FACTORY_CONTRACT_DATA.bytecode || BATCH_FACTORY_BYTECODE;
+        
+        if (!bytecode || bytecode === '0x') {
+            throw new Error('BatchFactory bytecode not available');
+        }
+        
+        console.log('Using bytecode length:', bytecode.length);
+        console.log('Using ABI with', BATCH_FACTORY_CONTRACT_DATA.abi.length, 'functions/events');
 
         // Create contract instance for deployment
         const factoryContract = new web3.eth.Contract(BATCH_FACTORY_CONTRACT_DATA.abi);
-
-        // Use bytecode from loaded data or fallback to hardcoded
-        const bytecode = BATCH_FACTORY_CONTRACT_DATA.bytecode || BATCH_FACTORY_BYTECODE;
 
         // Deploy the contract
         const deploy = factoryContract.deploy({
@@ -1323,14 +1350,31 @@ async function deployBatchFactory() {
 
     } catch (error) {
         console.error('Error deploying BatchFactory contract:', error);
-        let errorMessage = error.message || 'Unknown deployment error';
+        console.error('Error details:', {
+            message: error.message,
+            code: error.code,
+            data: error.data,
+            stack: error.stack
+        });
+        
+        let errorMessage = 'Unknown deployment error';
         
         if (error.code === 4001) {
             errorMessage = 'Transaction rejected by user';
-        } else if (error.message && error.message.includes('insufficient funds')) {
-            errorMessage = 'Insufficient funds for gas';
-        } else if (error.message && error.message.includes('gas')) {
-            errorMessage = 'Gas estimation failed - check network connection';
+        } else if (error.message) {
+            if (error.message.includes('insufficient funds')) {
+                errorMessage = 'Insufficient funds for gas';
+            } else if (error.message.includes('gas')) {
+                errorMessage = 'Gas estimation failed - check network connection';
+            } else if (error.message.includes('revert')) {
+                errorMessage = `Contract reverted: ${error.message}`;
+            } else if (error.message.includes('network')) {
+                errorMessage = `Network error: ${error.message}`;
+            } else {
+                errorMessage = error.message;
+            }
+        } else if (error.data && error.data.message) {
+            errorMessage = error.data.message;
         }
         
         updateBatchStatus(`❌ Error deploying BatchFactory: ${errorMessage}`, 'error');
