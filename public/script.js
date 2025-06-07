@@ -112,36 +112,51 @@ const ERC721_ABI = [
   }
 ];
 
-// BatchFactory ABI
-const BATCH_FACTORY_ABI = [
-    {
-        "inputs": [{"internalType": "uint256", "name": "salt", "type": "uint256"}],
-        "name": "deployBatch",
-        "outputs": [{"internalType": "address", "name": "batchContract", "type": "address"}],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {"internalType": "address", "name": "deployer", "type": "address"},
-            {"internalType": "uint256", "name": "salt", "type": "uint256"}
-        ],
-        "name": "getBatchAddress",
-        "outputs": [{"internalType": "address", "name": "predicted", "type": "address"}],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {"internalType": "address", "name": "deployer", "type": "address"},
-            {"internalType": "uint256", "name": "salt", "type": "uint256"}
-        ],
-        "name": "batchExists",
-        "outputs": [{"internalType": "bool", "name": "exists", "type": "bool"}],
-        "stateMutability": "view",
-        "type": "function"
+// BatchFactory contract data - will be loaded from deployed contract
+let BATCH_FACTORY_CONTRACT_DATA = {
+    abi: [
+        {
+            "inputs": [{"internalType": "uint256", "name": "salt", "type": "uint256"}],
+            "name": "deployBatch",
+            "outputs": [{"internalType": "address", "name": "batchContract", "type": "address"}],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {"internalType": "address", "name": "deployer", "type": "address"},
+                {"internalType": "uint256", "name": "salt", "type": "uint256"}
+            ],
+            "name": "getBatchAddress",
+            "outputs": [{"internalType": "address", "name": "predicted", "type": "address"}],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {"internalType": "address", "name": "deployer", "type": "address"},
+                {"internalType": "uint256", "name": "salt", "type": "uint256"}
+            ],
+            "name": "batchExists",
+            "outputs": [{"internalType": "bool", "name": "exists", "type": "bool"}],
+            "stateMutability": "view",
+            "type": "function"
+        }
+    ]
+};
+
+// Load BatchFactory contract data if available
+async function loadBatchFactoryData() {
+    try {
+        const response = await fetch('./BatchFactory.json');
+        if (response.ok) {
+            BATCH_FACTORY_CONTRACT_DATA = await response.json();
+            console.log('BatchFactory contract data loaded');
+        }
+    } catch (error) {
+        console.log('BatchFactory.json not found, using default ABI');
     }
-];
+}
 
 // BatchNFTTransfer ABI
 const BATCH_TRANSFER_ABI = [
@@ -1276,17 +1291,20 @@ async function deployBatchFactory() {
 async function initialize() {
     if (window.ethereum) {
         try {
+            // Load BatchFactory contract data first
+            await loadBatchFactoryData();
+            
             // Check if the user has already deployed a BatchFactory contract
             const storedAddress = localStorage.getItem('USER_BATCH_FACTORY_ADDRESS');
             if (storedAddress) {
                 USER_BATCH_FACTORY_ADDRESS = storedAddress;
                 console.log('BatchFactory address found in local storage:', storedAddress);
-                updateStatus(`BatchFactory address found in local storage: ${storedAddress}`, 'success');
+                updateBatchStatus(`BatchFactory found: ${storedAddress}`, 'success');
             }
 
         } catch (error) {
             console.error('Error initializing BatchFactory:', error);
-            updateStatus(`Error initializing BatchFactory: ${error.message}`, 'error');
+            updateBatchStatus(`Error initializing BatchFactory: ${error.message}`, 'error');
         }
     }
 }
