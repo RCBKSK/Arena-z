@@ -577,8 +577,13 @@ async function connectWallet() {
       // Initialize gas optimization
       await optimizeGasSettings();
 
-      // Check if user has a batch contract
+      // Check if user has deployed their own BatchFactory and batch contract
       await checkUserBatchContract();
+      
+      // Show deployment guidance if no BatchFactory exists
+      if (!USER_BATCH_FACTORY_ADDRESS) {
+        updateBatchStatus('⚠️ Deploy your own BatchFactory first to enable efficient batch transfers!', 'info');
+      }
     } catch (error) {
       console.error('Error connecting wallet:', error);
       updateStatus(`Error: ${error.message}`);
@@ -1246,8 +1251,22 @@ async function deployBatchFactory() {
         return;
     }
 
+    // Check if user already has a BatchFactory
+    const existingAddress = localStorage.getItem('USER_BATCH_FACTORY_ADDRESS');
+    if (existingAddress) {
+        const code = await web3.eth.getCode(existingAddress);
+        if (code !== '0x' && code !== '0x0') {
+            updateBatchStatus('❌ You already have a BatchFactory deployed! Use your existing one.', 'warning');
+            return;
+        } else {
+            // Clear invalid address
+            localStorage.removeItem('USER_BATCH_FACTORY_ADDRESS');
+            USER_BATCH_FACTORY_ADDRESS = null;
+        }
+    }
+
     try {
-        updateBatchStatus('Deploying BatchFactory contract...', 'info');
+        updateBatchStatus('🚀 Deploying YOUR personal BatchFactory contract...', 'info');
         document.getElementById('deployBatchFactoryBtn').disabled = true;
 
         const userAddress = accounts[0];
@@ -1273,15 +1292,19 @@ async function deployBatchFactory() {
         USER_BATCH_FACTORY_ADDRESS = deployedAddress;
         localStorage.setItem('USER_BATCH_FACTORY_ADDRESS', deployedAddress);
 
-        updateBatchStatus(`✅ Successfully deployed BatchFactory contract: ${deployedAddress}`, 'success');
-        console.log('Deployed BatchFactory contract:', deployedAddress);
+        updateBatchStatus(`✅ Successfully deployed YOUR BatchFactory: ${deployedAddress}`, 'success');
+        console.log('User deployed BatchFactory contract:', deployedAddress);
 
-        // Now check for existing batch contracts
+        // Enable batch contract deployment
+        document.getElementById('deployBatchBtn').disabled = false;
+        document.getElementById('checkBatchBtn').disabled = false;
+
+        // Check for existing batch contracts
         await checkUserBatchContract();
 
     } catch (error) {
         console.error('Error deploying BatchFactory contract:', error);
-        updateBatchStatus(`Error deploying BatchFactory contract: ${error.message}`, 'error');
+        updateBatchStatus(`❌ Error deploying BatchFactory: ${error.message}`, 'error');
     } finally {
         document.getElementById('deployBatchFactoryBtn').disabled = false;
     }
@@ -1299,7 +1322,9 @@ async function initialize() {
             if (storedAddress) {
                 USER_BATCH_FACTORY_ADDRESS = storedAddress;
                 console.log('BatchFactory address found in local storage:', storedAddress);
-                updateBatchStatus(`BatchFactory found: ${storedAddress}`, 'success');
+                updateBatchStatus(`✅ Your BatchFactory: ${storedAddress}`, 'success');
+            } else {
+                updateBatchStatus('⚠️ No BatchFactory found. Please deploy your own BatchFactory first!', 'info');
             }
 
         } catch (error) {
